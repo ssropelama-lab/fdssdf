@@ -59,6 +59,11 @@
   #dead.on{display:flex}
   #dead span{font:500 13px/1.6 ui-monospace,monospace;letter-spacing:.1em;color:#c9a89e}
   #fps{position:fixed;left:8px;bottom:8px;z-index:40;display:none;color:#93a897;white-space:pre;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 3px #000}
+  #ammo{position:absolute;right:16px;bottom:14px;text-align:right;display:grid;grid-template-columns:auto auto;gap:0 8px;align-items:baseline}
+  #ammo b{font-size:17px;letter-spacing:.04em}
+  #ammo b.low{color:#ff7a5c}
+  #ammo span{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8fa08f;text-align:left}
+  #hud.clean #ammo{display:none}
 </style>
 </head>
 <body>
@@ -84,10 +89,10 @@
       <div><b>мышь</b>обзор</div><div><b>W A S D</b>полёт</div><div><b>Space / E</b>вверх</div>
       <div><b>C / Q</b>вниз</div><div><b>Shift</b>быстрее</div><div><b>колесо</b>скорость</div>
       <div><b>ЛКМ</b>граната</div><div><b>ПКМ</b>выстрел</div><div><b>B</b>артналёт</div>
-      <div><b>K</b>погода</div><div><b>J</b>молния</div><div><b>G</b>дрон ⇄ пешком</div><div><b>F</b>прожектор</div><div><b>C / Space</b>нырнуть / всплыть</div>
+      <div><b>K</b>погода</div><div><b>J</b>молния</div><div><b>G</b>дрон ⇄ пешком</div><div><b>F</b>прожектор / ящик</div><div><b>C / Space</b>нырнуть / всплыть</div>
       <div><b>E</b>дверь / колючка</div><div><b>W у лестницы</b>лезть</div><div><b>M</b>карта</div><div><b>P</b>облёт</div><div><b>R</b>на базу</div>
       <div><b>N</b>фаза суток</div><div><b>1..4</b>утро…ночь</div><div><b>T · [ ]</b>время</div>
-      <div><b>U</b>звук</div><div><b>V</b>интерфейс</div><div><b>Esc</b>пауза</div>
+      <div><b>X</b>перезарядка</div><div><b>U</b>звук</div><div><b>V</b>интерфейс</div><div><b>Esc</b>пауза</div>
     </div>
     <button class="go" id="g_go">Взлететь</button><button class="go alt" id="g_cine">Облёт карты</button>
   </div>
@@ -100,6 +105,7 @@
   <div id="toast"></div>
   <div id="hint"></div>
   <div id="help"></div>
+  <div id="ammo"></div>
   <div id="map"><canvas></canvas></div>
 </div>
 <div id="dead"><div></div><span></span></div>
@@ -4602,6 +4608,8 @@ function staticObject(shape, x, y, z, rotY, idx2) {
   o.setFriction(0.9);
   o.setRestitution(0.1);
   o.setUserIndex(idx2);
+  o.__ms = ms;
+  o.__shape = shape;
   PHYS.world.addRigidBody(o, 2, -1);
   return o;
 }
@@ -4646,6 +4654,9 @@ function removeStaticCollider(c) {
   if (!o) return;
   PHYS.world.removeRigidBody(o);
   PHYS.statics.delete(c);
+  A.destroy(o.__ms);
+  A.destroy(o.__shape);
+  A.destroy(o);
 }
 function syncHeights(H2, i0, j0, i1, j1) {
   if (!PHYS.hf) return;
@@ -4654,6 +4665,10 @@ function syncHeights(H2, i0, j0, i1, j1) {
   for (const b of PHYS.bodies) if (b.body) b.body.activate();
 }
 var MAX = () => Math.round(Q.bodies * (1 - PERF.load * 0.5));
+// userIndex ≥ BODY_IDX0 → динамическое тело: rayCast находит его по индексу, а не перебором
+var BODY_IDX0 = 1e6;
+var BODY_BY_IDX = /* @__PURE__ */ new Map();
+var bodySerial = 0;
 function addBody(o) {
   if (!PHYS.ready) return null;
   while (PHYS.bodies.length >= MAX()) {
@@ -4662,6 +4677,7 @@ function addBody(o) {
     killBody(PHYS.bodies[i]);
   }
   let shape = o.shape;
+  const children = [];
   const s = o.size || [0.1, 0.1, 0.1];
   if (shape === "box") {
     V0.setValue(s[0] / 2, s[1] / 2, s[2] / 2);
@@ -4687,6 +4703,7 @@ function addBody(o) {
       V0.setValue(part.pos[0], part.pos[1], part.pos[2]);
       T0.setOrigin(V0);
       c.addChildShape(T0, ps);
+      children.push(ps);
     }
     shape = c;
   }
@@ -4724,10 +4741,14 @@ function addBody(o) {
     body.setCcdSweptSphereRadius(o.ccd * 0.5);
   }
   body.setSleepingThresholds(0.25, 0.3);
+  const idx2 = BODY_IDX0 + bodySerial++ % 1e8;
+  body.setUserIndex(idx2);
   PHYS.world.addRigidBody(body, 1, -1);
   const b = {
     body,
     shape,
+    children,
+    idx: idx2,
     ms,
     mesh: o.mesh || null,
     sync: o.sync || null,
@@ -4745,17 +4766,21 @@ function addBody(o) {
     wet: false,
     synced: false
   };
+  BODY_BY_IDX.set(idx2, b);
   PHYS.bodies.push(b);
   return b;
 }
 function killBody(b) {
   const i = PHYS.bodies.indexOf(b);
   if (i >= 0) PHYS.bodies.splice(i, 1);
+  BODY_BY_IDX.delete(b.idx);
   if (b.body) {
     PHYS.world.removeRigidBody(b.body);
     A.destroy(b.body);
     A.destroy(b.ms);
     if (typeof b.shape !== "string") A.destroy(b.shape);
+    if (b.children) for (const ps of b.children) A.destroy(ps);
+    b.children = null;
     b.body = null;
   }
   if (b.onDone) b.onDone(b);
@@ -4830,12 +4855,7 @@ function rayCast(a, b, skipPlayer = true) {
     _hit.point.set(p.x(), p.y(), p.z());
     _hit.normal.set(n2.x(), n2.y(), n2.z());
     _hit.idx = obj.getUserIndex();
-    _hit.body = null;
-    const ptr = A.getPointer(obj);
-    for (const bb of PHYS.bodies) if (bb.body && A.getPointer(bb.body) === ptr) {
-      _hit.body = bb;
-      break;
-    }
+    _hit.body = _hit.idx >= BODY_IDX0 ? BODY_BY_IDX.get(_hit.idx) || null : null;
     _hit.dist = _hit.point.distanceTo(a);
     res = _hit;
   }
@@ -4881,7 +4901,8 @@ var FAR = (b) => camRef && (b.pos.x - camRef.position.x) ** 2 + (b.pos.z - camRe
 function stepPhysics(dt) {
   if (!PHYS.ready) return;
   buoyancy(dt);
-  PHYS.world.stepSimulation(dt, Q.physSub, Q.physStep);
+  // шагов должно хватать на весь кадр (dt ≤ 0.05), иначе при низком FPS физика замедляется
+  PHYS.world.stepSimulation(dt, Math.max(Q.physSub, Math.ceil(0.05 / Q.physStep) + 1), Q.physStep);
   PHYS.steps++;
   const L = PHYS.bodies;
   for (let i = L.length - 1; i >= 0; i--) {
@@ -8209,6 +8230,9 @@ import * as THREE16 from "three";
 var PANES = [];
 var im = null;
 var shardMat = null;
+// все осколки — один InstancedMesh: слот на осколок, пустые слоты сжаты в ноль
+var SHARDS = { im: null, free: [], cap: 320 };
+var _ZERO_M = new THREE16.Matrix4().makeScale(0, 0, 0);
 var _m4 = new THREE16.Matrix4();
 var _p2 = new THREE16.Vector3();
 var _q5 = new THREE16.Quaternion();
@@ -8231,6 +8255,17 @@ function buildGlass() {
   const mat = new THREE16.MeshPhysicalMaterial({ color: 10465976, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.32, reflectivity: 0.9, side: THREE16.DoubleSide, depthWrite: false });
   shardMat = mat.clone();
   shardMat.opacity = 0.55;
+  const sg = new THREE16.BufferGeometry();
+  sg.setAttribute("position", new THREE16.BufferAttribute(new Float32Array([0, 1, 0, -0.8, -0.5, 0, 0.8, -0.4, 0]), 3));
+  sg.computeVertexNormals();
+  SHARDS.im = new THREE16.InstancedMesh(sg, shardMat, SHARDS.cap);
+  SHARDS.im.frustumCulled = false;
+  SHARDS.im.renderOrder = 3;
+  for (let i = 0; i < SHARDS.cap; i++) {
+    SHARDS.im.setMatrixAt(i, _ZERO_M);
+    SHARDS.free.push(SHARDS.cap - 1 - i);
+  }
+  scene.add(SHARDS.im);
   im = new THREE16.InstancedMesh(new THREE16.BoxGeometry(1, 1, 1), mat, Math.max(1, PANES.length));
   im.count = PANES.length;
   im.frustumCulled = false;
@@ -8246,13 +8281,19 @@ function writePane(p) {
 }
 function paneBody(p) {
   const A2 = PHYS.A;
-  const shape = new A2.btBoxShape(new A2.btVector3(p.w / 2, p.h / 2, 0.01));
+  const he = new A2.btVector3(p.w / 2, p.h / 2, 0.01), org = new A2.btVector3(p.pos.x, p.pos.y, p.pos.z);
+  const rq = new A2.btQuaternion(p.q.x, p.q.y, p.q.z, p.q.w), zero = new A2.btVector3(0, 0, 0);
+  const shape = new A2.btBoxShape(he);
   const tr = new A2.btTransform();
   tr.setIdentity();
-  tr.setOrigin(new A2.btVector3(p.pos.x, p.pos.y, p.pos.z));
-  tr.setRotation(new A2.btQuaternion(p.q.x, p.q.y, p.q.z, p.q.w));
-  const info = new A2.btRigidBodyConstructionInfo(0, new A2.btDefaultMotionState(tr), shape, new A2.btVector3(0, 0, 0));
+  tr.setOrigin(org);
+  tr.setRotation(rq);
+  const ms = new A2.btDefaultMotionState(tr);
+  const info = new A2.btRigidBodyConstructionInfo(0, ms, shape, zero);
   const b = new A2.btRigidBody(info);
+  for (const o of [info, tr, he, org, rq, zero]) A2.destroy(o);
+  b.__ms = ms;
+  b.__shape = shape;
   b.setUserIndex(-1e3 - p.i);
   PHYS.world.addRigidBody(b, 2, -1);
   return b;
@@ -8264,6 +8305,9 @@ function breakPane(p, dir2, force = 4, hit = null) {
   if (p.col) p.col.dead = true;
   if (p.body) {
     PHYS.world.removeRigidBody(p.body);
+    PHYS.A.destroy(p.body.__ms);
+    PHYS.A.destroy(p.body.__shape);
+    PHYS.A.destroy(p.body);
     p.body = null;
   }
   const right2 = new THREE16.Vector3(1, 0, 0).applyQuaternion(p.q), up = new THREE16.Vector3(0, 1, 0).applyQuaternion(p.q);
@@ -8274,11 +8318,19 @@ function breakPane(p, dir2, force = 4, hit = null) {
     if (hit) pos.lerp(hit, 0.2);
     const vel = dir2.clone().multiplyScalar(force * sr(0.4, 1.2)).add(new THREE16.Vector3(sr(-1, 1), sr(-0.3, 1.2), sr(-1, 1)));
     const q = new THREE16.Quaternion().setFromEuler(new THREE16.Euler(srnd() * TAU, srnd() * TAU, srnd() * TAU));
-    const g = shardGeo(s);
-    const mesh = new THREE16.Mesh(g, shardMat);
-    mesh.position.copy(pos);
-    mesh.quaternion.copy(q);
-    scene.add(mesh);
+    if (!SHARDS.free.length) break;
+    const slot = SHARDS.free.pop(), sx = s * sr(0.5, 1), sy = s * sr(0.5, 1);
+    const put2 = (pp, qq, f) => {
+      _s3.set(sx * f, sy * f, 1);
+      SHARDS.im.setMatrixAt(slot, _m4.compose(pp, qq, _s3));
+      SHARDS.im.instanceMatrix.needsUpdate = true;
+    };
+    const release = () => {
+      SHARDS.im.setMatrixAt(slot, _ZERO_M);
+      SHARDS.im.instanceMatrix.needsUpdate = true;
+      SHARDS.free.push(slot);
+    };
+    put2(pos, q, 1);
     const b = addBody({
       shape: "box",
       size: [s, s * 0.8, 0.03],
@@ -8287,34 +8339,21 @@ function breakPane(p, dir2, force = 4, hit = null) {
       quat: q,
       vel,
       ang: new THREE16.Vector3(sr(-15, 15), sr(-15, 15), sr(-15, 15)),
-      mesh,
       life: sr(14, 24),
       friction: 0.5,
       restitution: 0.35,
       ccd: 0.02,
       float: 0,
       rad: 0.02,
-      onDone: () => {
-        scene.remove(mesh);
-        g.dispose();
-      }
+      sync: (pp, qq, f) => put2(pp, qq, Math.max(0.01, f)),
+      onDone: release
     });
-    if (!b) {
-      scene.remove(mesh);
-      g.dispose();
-    }
+    if (!b) release();
   }
   for (let i = 0; i < 14; i++) FX.add.spawn({ x: p.pos.x + sr(-p.w, p.w) * 0.5, y: p.pos.y + sr(-p.h, p.h) * 0.5, z: p.pos.z + sr(-0.2, 0.2), vx: dir2.x * force * 0.5 + sr(-1, 1), vy: sr(-0.5, 2), vz: dir2.z * force * 0.5 + sr(-1, 1), size: 0.03, life: sr(0.4, 1.2), col: [1.6, 1.7, 1.8], a: 0.8, grav: 9.8, drag: 0.5 });
   const d = camera.position.distanceTo(p.pos);
   const rightC = new THREE16.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
   glassSound(0, rightC.dot(p.pos.clone().sub(camera.position).normalize()) * (d > 1 ? 1 : 0));
-}
-function shardGeo(s) {
-  const g = new THREE16.BufferGeometry(), k = [sr(0.5, 1), sr(0.5, 1), sr(0.5, 1)];
-  const a = [0, s * k[0]], b = [-s * k[1] * 0.8, -s * 0.5], c = [s * k[2] * 0.8, -s * 0.4];
-  g.setAttribute("position", new THREE16.BufferAttribute(new Float32Array([a[0], a[1], 0, b[0], b[1], 0, c[0], c[1], 0]), 3));
-  g.computeVertexNormals();
-  return g;
 }
 var PENDING = [];
 function blastGlass(x, y, z, size) {
@@ -9610,6 +9649,7 @@ function onBlast(x, gy, z, size, water, opt = {}) {
     if (Math.random() < 0.25 + 0.7 * dry) ignite(x, z, Math.ceil(r * 1.2 + size), 0.25 + 0.5 * dry);
   }
   const wet = WEATHER.wet;
+  let leafBudget = 260;
   for (const t of treesNear(x, z, 9 * size + 3)) {
     const d = Math.max(0.45, Math.hypot(t.x - x, t.z - z) - t.r);
     const k = size * 2.2 / Math.pow(d, 1.15);
@@ -9618,6 +9658,11 @@ function onBlast(x, gy, z, size, water, opt = {}) {
     if (k > 1.15 * strength && Math.random() < 0.92) {
       breakTree(t, _d2.clone(), k);
       continue;
+    }
+    if (!t.dead && k > 0.08 && leafBudget > 0) {
+      const nl = Math.min(leafBudget, 8 + k * 40);
+      leafBudget -= nl;
+      leafBurst(t.x, t.y + t.h * sr(0.45, 0.85), t.z, nl, t.sp, _d2, t.h * 0.12);
     }
     if (!t.dead && k > 0.22) {
       dropBranches(t, _d2, Math.min(9, Math.round(1 + k * 5 * (0.6 + Q.tex * 0.4))), d < 3 * size);
@@ -9739,6 +9784,7 @@ function planLandmarks() {
     const [x, z] = findSpot(-80, -64, 2.6);
     P2.water.push({ x, z, rot: 0.6, paint: "grey" });
   }
+  planExtraLandmarks();
   for (const t of P2.towers) keep(t.x, t.z, 3.6);
   for (const t of P2.stands) keep(t.x, t.z, 2.2);
   for (const t of P2.water) keep(t.x, t.z, 2.8);
@@ -11716,6 +11762,13 @@ function blastKnock(x, y, z, size) {
 var BOMBS = [];
 function dropBomb() {
   if (PL.dead > 0 || FRAME.t - PL.lastDrop < 1.1) return;
+  if (AMMO.grenades <= 0) {
+    PL.lastDrop = FRAME.t;
+    click();
+    toast("гранаты кончились — пополните у ящика (F)");
+    return;
+  }
+  AMMO.grenades--;
   PL.lastDrop = FRAME.t;
   const dir2 = new THREE25.Vector3();
   camera.getWorldDirection(dir2);
@@ -11791,7 +11844,10 @@ var lookV = new THREE25.Vector3();
 function updatePlayer(dt) {
   if (PL.dead > 0) {
     PL.dead -= dt;
-    if (PL.dead <= 0) spawnAt(PL.team, PL.mode);
+    if (PL.dead <= 0) {
+      spawnAt(PL.team, PL.mode);
+      resetAmmo();
+    }
     applyCamera(dt);
     return;
   }
@@ -11828,7 +11884,7 @@ function updateDrone(dt, ix, iz, boost) {
   const sp = PL.speed * boost * (PL.under ? 0.3 : 1);
   tmp.set(0, 0, 0).addScaledVector(lookV, iz * sp).addScaledVector(right, ix * sp);
   if (keys.Space || keys.KeyE) tmp.y += sp * 0.8;
-  if (keys.KeyC || keys.KeyQ || keys.ControlLeft) tmp.y -= sp * 0.8;
+  if (keys.KeyC || keys.KeyQ) tmp.y -= sp * 0.8;
   if (PL.under && tmp.y === 0) tmp.y = 0.35;
   const k = (tmp.lengthSq() > PL.vel.lengthSq() ? 2.6 : 3.8) * (PL.under ? 0.6 : 1);
   PL.vel.lerp(tmp, Math.min(1, dt * k));
@@ -11941,7 +11997,7 @@ function updateWalk(dt, ix, iz, boost) {
   const water = lakeRho(PL.pos.x, PL.pos.z) < 1 && !onDeck ? MAP.WATER_Y : -1e9;
   const depth = water - terrainH(PL.pos.x, PL.pos.z);
   PL.swim = depth > 1.25;
-  const wantCrouch = keys.KeyC || keys.ControlLeft;
+  const wantCrouch = keys.KeyC;
   PL.crouch = lerp(PL.crouch, wantCrouch && !PL.swim ? 1 : 0, Math.min(1, dt * 10));
   const wade = depth > 0.35 && !PL.swim ? 0.55 : 1;
   const onSup = supportTop(PL.pos.x, PL.pos.z, 0.3, PL.pos.y + 0.05, 0.3) > terrainH(PL.pos.x, PL.pos.z) + 0.03 && PL.pos.y > terrainH(PL.pos.x, PL.pos.z) + 0.03;
@@ -11985,7 +12041,7 @@ function updateWalk(dt, ix, iz, boost) {
   PL.pos.z = clamp(PL.pos.z, -lim, lim);
   if (PL.swim) {
     const floor = terrainH(PL.pos.x, PL.pos.z), surface = water - 1.35 + Math.sin(FRAME.t * 1.6) * 0.04;
-    let vy = keys.KeyC || keys.ControlLeft ? -1.6 : keys.Space ? 1.4 : (surface - PL.pos.y) * 2.2;
+    let vy = keys.KeyC ? -1.6 : keys.Space ? 1.4 : (surface - PL.pos.y) * 2.2;
     PL.pos.y = clamp(PL.pos.y + vy * dt, floor + 0.1, surface);
     PL.vel.y = 0;
     PL.onGround = false;
@@ -13661,6 +13717,8 @@ function house(o) {
     box(mat, x, ly, z, sx, sy, sz, { rot: o.rot + (extra.r ?? 0), rx: extra.rx, rz: extra.rz, tile: extra.tile ?? tile, collide: extra.collide, walk: extra.walk, vertical: extra.vertical, uvOff: extra.uvOff });
   };
   const S = beginStruct({ kind: "house", name: o.id, x: o.x, z: o.z, rot: o.rot, w, d, h, fy, fuel: o.style === "log" ? 1.4 : 1, log: o.style === "log" });
+  // надпись «badVIno» — примерно на каждом третьем доме, на одной стене
+  o.__graf = GRAF.n++ % 3 === 1 ? ["front", "left", "right", "back"][GRAF.n % 4] : null;
   noPanel();
   for (const [lx, lz] of [[-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [0, -d / 2], [0, d / 2]])
     B(M.concrete, lx * 0.96, base2 + 0.12, lz * 0.96, 0.4, 0.62, 0.4, { tile: 0.8 });
@@ -13726,6 +13784,7 @@ function house(o) {
       pn.y1 = y1;
       pc.pn = pn;
       B(wallMat, lx, fy + (y0 + y1) / 2, lz, u1 - u0, y1 - y0, WALL_T, { r: S22.r, collide: true, walk: false, uvOff: [u0, y0] });
+      graffitiOn(o, name, lx, lz, fy, pc, P2);
       walls.push(pn);
       bySide[name].push(pn);
       if (R2() < (o.camp ? 0.1 : 0.14) && y1 - y0 > 0.8) {
@@ -14388,12 +14447,6 @@ function buildMapOverlay() {
     x.fillRect(-h.w / 2 * SCALE, -h.d / 2 * SCALE, h.w * SCALE, h.d * SCALE);
     x.restore();
   }
-  for (const L of LAMPS) {
-    if (!L.on) continue;
-    const [u, v] = P(L.pos.x, L.pos.z);
-    x.fillStyle = "rgba(255,200,120,.9)";
-    x.fillRect(u - 1, v - 1, 2, 2);
-  }
   for (const s of Object.values(SPAWNS)) {
     const [u, v] = P(s.x, s.z);
     x.strokeStyle = s.team === "A" ? "#6f9ed4" : "#e07a52";
@@ -14440,6 +14493,18 @@ function buildMapOverlay() {
 function drawMap() {
   const x = mapCanvas.getContext("2d");
   x.drawImage(mapBase, 0, 0);
+  // фонари и ящики рисуются каждый раз: разбитый фонарь сразу пропадает с карты
+  x.fillStyle = "rgba(255,200,120,.9)";
+  for (const L of LAMPS) {
+    if (!L.on) continue;
+    const [lu, lv] = P(L.pos.x, L.pos.z);
+    x.fillRect(lu - 1, lv - 1, 2, 2);
+  }
+  x.fillStyle = "#e8d27a";
+  for (const c of CRATES) {
+    const [cu, cv2] = P(c.x, c.z);
+    x.fillRect(cu - 3, cv2 - 3, 6, 6);
+  }
   const [u, v] = P(PL.pos.x, PL.pos.z);
   x.save();
   x.translate(u, v);
@@ -14455,29 +14520,54 @@ function drawMap() {
   x.restore();
 }
 var DIRS = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
+var HUD = { t: 1, el: null, osd: "", ammo: "", zone: "", clock: "" };
+function hudEls() {
+  if (!HUD.el) HUD.el = { toast: $("#toast"), clock: $("#clock"), osd: $("#osd"), zone: $("#zone"), dead: $("#dead"), map: $("#map"), ammo: $("#ammo") };
+  return HUD.el;
+}
 function updateHud(dt) {
+  const E = hudEls();
   if (toastT > 0) {
     toastT -= dt;
-    if (toastT <= 0) $("#toast").classList.remove("on");
+    if (toastT <= 0) E.toast.classList.remove("on");
   }
-  const cl = $("#clock");
-  cl.firstElementChild.textContent = fmtTime(TIME.h);
-  cl.lastElementChild.textContent = SKY.label + (TIME.paused ? " · пауза" : "");
+  if (E.map.classList.contains("on")) drawMap();
+  // текст HUD меняется редко: DOM трогаем раз в 150 мс и только при изменении строки
+  HUD.t += dt;
+  if (HUD.t < 0.15) return;
+  HUD.t = 0;
+  const clk = fmtTime(TIME.h) + "|" + SKY.label + (TIME.paused ? " · пауза" : "");
+  if (clk !== HUD.clock) {
+    HUD.clock = clk;
+    E.clock.firstElementChild.textContent = fmtTime(TIME.h);
+    E.clock.lastElementChild.textContent = SKY.label + (TIME.paused ? " · пауза" : "");
+  }
   const heading = (-PL.yaw * 180 / Math.PI % 360 + 360) % 360;
   const spd = Math.hypot(PL.vel.x, PL.vel.y, PL.vel.z) * 3.6;
-  const osd = $("#osd");
-  osd.innerHTML = PL.mode === "drone" ? `<b>${PL.cine ? "ОБЛЁТ" : "ДРОН"}</b>${PL.under ? " · ПОД ВОДОЙ" : ""} · ALT ${PL.agl.toFixed(1)} м · ${spd.toFixed(0)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°<br><span>скорость ${PL.speed.toFixed(0)} м/с · ${PL.team === "A" ? "ALPHA" : "DELTA"}</span>` : `<b>ПЕШКОМ</b> · ${spd.toFixed(1)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°${PL.swim ? PL.under ? " · под водой" : " · вплавь" : ""}${PL.air < 0.999 ? ` · воздух <b style="color:${PL.air < 0.3 ? "#ff7a5c" : "#cfe"}">${Math.round(PL.air * 100)}%</b>` : ""}${PL.burn > 0.2 ? ' · <b style="color:#ff9a5c">ОГОНЬ</b>' : ""}<br><span>${PL.team === "A" ? "ALPHA" : "DELTA"}</span>`;
-  const z = zoneInfo(), zel = $("#zone");
-  zel.textContent = z ? z.text : "";
-  zel.className = z && z.warn ? "warn" : "";
-  const dead = $("#dead");
+  const osd = PL.mode === "drone" ? `<b>${PL.cine ? "ОБЛЁТ" : "ДРОН"}</b>${PL.under ? " · ПОД ВОДОЙ" : ""} · ALT ${PL.agl.toFixed(1)} м · ${spd.toFixed(0)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°<br><span>скорость ${PL.speed.toFixed(0)} м/с · ${PL.team === "A" ? "ALPHA" : "DELTA"}</span>` : `<b>ПЕШКОМ</b> · ${spd.toFixed(1)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°${PL.swim ? PL.under ? " · под водой" : " · вплавь" : ""}${PL.air < 0.999 ? ` · воздух <b style="color:${PL.air < 0.3 ? "#ff7a5c" : "#cfe"}">${Math.round(PL.air * 100)}%</b>` : ""}${PL.burn > 0.2 ? ' · <b style="color:#ff9a5c">ОГОНЬ</b>' : ""}<br><span>${PL.team === "A" ? "ALPHA" : "DELTA"}</span>`;
+  if (osd !== HUD.osd) {
+    HUD.osd = osd;
+    E.osd.innerHTML = osd;
+  }
+  const am = AMMO;
+  const ammo = `<b class="${am.mag === 0 ? "low" : ""}">${am.reload > 0 ? "перезарядка…" : am.mag + " / " + am.reserve}</b><span>патроны</span><b class="${am.grenades === 0 ? "low" : ""}">${am.grenades}</b><span>гранаты</span>`;
+  if (ammo !== HUD.ammo) {
+    HUD.ammo = ammo;
+    E.ammo.innerHTML = ammo;
+  }
+  const z = zoneInfo(), zt = (z ? z.text : "") + (z && z.warn ? "!" : "");
+  if (zt !== HUD.zone) {
+    HUD.zone = zt;
+    E.zone.textContent = z ? z.text : "";
+    E.zone.className = z && z.warn ? "warn" : "";
+  }
+  const dead = E.dead;
   if (PL.dead > 0) {
     dead.classList.add("on");
     dead.firstElementChild.textContent = PL.deathMsg;
     dead.lastElementChild.textContent = "возрождение на базе " + (PL.team === "A" ? "ALPHA" : "DELTA") + " через " + Math.ceil(PL.dead) + " с";
     dead.style.background = `rgba(10,4,3,${lerp(0.25, 0.9, Math.min(1, (3.2 - PL.dead) / 1.2))})`;
   } else dead.classList.remove("on");
-  if ($("#map").classList.contains("on")) drawMap();
 }
 
 // src/fx/footprints.js
@@ -14781,8 +14871,15 @@ function aimPoint(maxD = 600) {
   return null;
 }
 function shoot() {
-  if (PL.dead > 0 || FRAME.t - lastShot < 0.11) return;
+  if (PL.dead > 0 || FRAME.t - lastShot < 0.11 || AMMO.reload > 0) return;
   lastShot = FRAME.t;
+  if (AMMO.mag <= 0) {
+    click();
+    if (startReload()) toast("перезарядка");
+    else toast("патроны кончились — пополните у ящика (F)");
+    return;
+  }
+  if (--AMMO.mag === 0) startReload();
   camera.getWorldDirection(_dir);
   _dir.x += sr(-4e-3, 4e-3);
   _dir.y += sr(-4e-3, 4e-3);
@@ -14811,6 +14908,7 @@ function shoot() {
   tracer.material.opacity = 0.7;
   tracerT = 0.06;
   scareBirds(camera.position.x, camera.position.y, camera.position.z, 75, 0.9);
+  shotThroughCrowns(_a2, _dir, p ? _a2.distanceTo(p) : 160);
   if (shootLamps(_a2, _dir, p ? _a2.distanceTo(p) : 500)) return;
   if (!p) return;
   if (h && h.idx <= -1e3) {
@@ -14848,6 +14946,8 @@ function shoot() {
     return;
   }
   if (c && c.tree) {
+    const t = c.tree;
+    if (!t.broken && !t.dead) leafBurst(t.x, t.y + t.h * sr(0.55, 0.85), t.z, 5 + srnd() * 6, t.sp, _dir, t.h * 0.1);
     addHole(p, n2, 0, null);
     splinters(p.x, p.y, p.z, n2, 3, M.logEnd, 0.18);
     puff(p, n2, [0.35, 0.26, 0.18], 4);
@@ -14893,6 +14993,369 @@ function updateWeapons(dt) {
   }
 }
 
+// src/world/badvino.js — вышки, ящики с боеприпасами, флаг «badVIno», надписи на домах, листопад от попаданий
+var AMMO = { mag: 30, magMax: 30, reserve: 120, reserveMax: 210, grenades: 4, grenadesMax: 6, reload: 0 };
+function resetAmmo() {
+  AMMO.mag = AMMO.magMax;
+  AMMO.reserve = 120;
+  AMMO.grenades = 4;
+  AMMO.reload = 0;
+}
+function startReload() {
+  if (AMMO.reload > 0 || AMMO.mag >= AMMO.magMax || AMMO.reserve <= 0) return false;
+  AMMO.reload = 1.9;
+  click();
+  return true;
+}
+function updateAmmo(dt) {
+  if (AMMO.reload <= 0) return;
+  AMMO.reload -= dt;
+  if (AMMO.reload > 0) return;
+  AMMO.reload = 0;
+  const n2 = Math.min(AMMO.magMax - AMMO.mag, AMMO.reserve);
+  AMMO.mag += n2;
+  AMMO.reserve -= n2;
+  clang(0.4);
+}
+var CRATES = [];
+var CRATE = { near: null };
+function planExtraLandmarks() {
+  const P2 = LANDMARKS;
+  // 8 лабазов: 4 вокруг озера, по одному у баз, по одному в пионерлагере и на турбазе
+  const want = [];
+  for (const phi of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) want.push(lakeContour(phi, 14));
+  for (const s of Object.values(SPAWNS)) want.push([s.x + s.fx * 17 - s.fz * 8, s.z + s.fz * 17 + s.fx * 8]);
+  want.push(campXZ(-17, -12), [-40, -63]);
+  for (const [tx, tz] of want) {
+    const [x, z] = findSpot(tx, tz, 2.1);
+    P2.stands.push({ x, z, rot: Math.atan2(-x, -z) });
+    keep(x, z, 2.4);
+  }
+  const addCrate = (tx, tz, name) => {
+    const [x, z] = findSpot(tx, tz, 1.2, { pathPad: 0.3, trenchPad: 1.2 });
+    CRATES.push({ x, z, rot: Math.atan2(-x, -z), name });
+    keep(x, z, 1.5);
+  };
+  for (const s of Object.values(SPAWNS)) addCrate(s.x + s.fx * 6 + s.fz * 3.5, s.z + s.fz * 6 - s.fx * 3.5, "база " + s.name);
+  addCrate(...campXZ(6.5, 1.5), "пионерлагерь");
+  addCrate(-46, -45, "турбаза");
+  // центр карты — остров с флагом; остров исключён из findSpot, место выбрано вручную
+  CRATES.push({ x: ISLAND.x - 2, z: ISLAND.z - 1.2, rot: 0.4, name: "остров" });
+}
+function crateSignTex() {
+  const [c, x] = cv(512, 216);
+  x.fillStyle = "#4a5433";
+  x.fillRect(0, 0, 512, 216);
+  grain(x, 512, 216, 14);
+  x.fillStyle = "rgba(232,224,190,.92)";
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+  x.font = "bold 58px 'Courier New', monospace";
+  x.fillText("БОЕПРИПАСЫ", 256, 70);
+  x.font = "bold 34px 'Courier New', monospace";
+  x.fillText("7.62 × 39  ·  РГД-5", 256, 128);
+  x.font = "bold 30px 'Courier New', monospace";
+  x.fillStyle = "rgba(240,200,90,.95)";
+  x.fillText("[F] — ПОПОЛНИТЬ", 256, 178);
+  return tex(c);
+}
+function buildCrates() {
+  const signMat = new THREE35.MeshStandardMaterial({ map: crateSignTex(), roughness: 0.92 });
+  // химсвет на крышке: виден ночью, помогает найти ящик
+  const glowMat = new THREE35.MeshBasicMaterial({ color: 12648280 });
+  const plate = new THREE35.PlaneGeometry(1.02, 0.43);
+  for (const c of CRATES) {
+    const y = terrainH(c.x, c.z), F2 = frame(c.x, c.z, c.rot);
+    c.y = y;
+    box(M.crate, c.x, y + 0.31, c.z, 1.2, 0.62, 0.72, { rot: c.rot, tile: 0.8, collide: true });
+    const [lx, lz] = F2.p(0, -0.1);
+    box(M.crate, lx, y + 0.68, lz, 1.24, 0.06, 0.76, { rot: c.rot, rx: -0.14, tile: 0.8 });
+    for (const e of [1, -1]) {
+      const [sx, sz] = F2.p(0, e * 0.365);
+      place(signMat, plate, sx, y + 0.3, sz, c.rot + (e > 0 ? 0 : Math.PI), 1, { cast: false });
+    }
+    const [gx, gz] = F2.p(0.95, 0.15);
+    box(M.olive, gx, y + 0.19, gz, 0.52, 0.38, 0.4, { rot: c.rot + 0.35, tile: 0.6, collide: true });
+    const [kx, kz] = F2.p(-0.35, 0.2);
+    cyl(glowMat, kx, y + 0.74, kz, 0.018, 0.018, 0.16, { seg: 6, rot: 0, cast: false });
+  }
+}
+function nearCrate() {
+  const p = PL.pos;
+  let best = null, bd = 1e9;
+  for (const c of CRATES) {
+    const d = Math.hypot(c.x - p.x, c.z - p.z), dy = p.y - (c.y ?? 0);
+    const ok = PL.mode === "walk" ? d < 2.4 && Math.abs(dy) < 1.8 : d < 3.5 && dy < 5 && dy > -1;
+    if (ok && d < bd) {
+      bd = d;
+      best = c;
+    }
+  }
+  return best;
+}
+function updateCrates() {
+  CRATE.near = PL.dead > 0 || PL.cine ? null : nearCrate();
+  if (CRATE.near && !INTER.hint) {
+    const full = AMMO.reserve >= AMMO.reserveMax && AMMO.grenades >= AMMO.grenadesMax && AMMO.mag >= AMMO.magMax;
+    INTER.hint = full ? "ящик с боеприпасами · всё полно" : "F — пополнить патроны и гранаты";
+  }
+}
+function resupply() {
+  const c = CRATE.near;
+  if (!c) return false;
+  const full = AMMO.reserve >= AMMO.reserveMax && AMMO.grenades >= AMMO.grenadesMax && AMMO.mag >= AMMO.magMax;
+  AMMO.reserve = AMMO.reserveMax;
+  AMMO.grenades = AMMO.grenadesMax;
+  if (AMMO.reload <= 0) AMMO.mag = AMMO.magMax;
+  clang(0.8);
+  setTimeout(() => clang(0.5), 120);
+  toast(full ? "боезапас и так полный" : "боезапас пополнен · " + c.name);
+  return true;
+}
+function flagClothTex(text, mirror, sub) {
+  const W = 1024, H2 = 640, [c, x] = cv(W, H2);
+  x.fillStyle = "#f1efe7";
+  x.fillRect(0, 0, W, H2);
+  grain(x, W, H2, 10);
+  // складки и лёгкая грязь по краю
+  for (let i = 0; i < 9; i++) {
+    const gx = srnd() * W, g = x.createLinearGradient(gx - 40, 0, gx + 40, 0);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(0.5, "rgba(80,78,70,.07)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    x.fillStyle = g;
+    x.fillRect(gx - 40, 0, 80, H2);
+  }
+  const eg = x.createLinearGradient(0, H2, 0, H2 - 90);
+  eg.addColorStop(0, "rgba(90,80,60,.28)");
+  eg.addColorStop(1, "rgba(90,80,60,0)");
+  x.fillStyle = eg;
+  x.fillRect(0, H2 - 90, W, 90);
+  x.save();
+  if (mirror) {
+    x.translate(W, 0);
+    x.scale(-1, 1);
+  }
+  x.fillStyle = "#15181d";
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+  x.font = `bold ${text.length > 5 ? 190 : 260}px Georgia, 'Times New Roman', serif`;
+  x.fillText(text, W / 2, H2 * 0.47);
+  x.fillStyle = "#8f1f1a";
+  x.fillRect(W * 0.18, H2 * 0.74, W * 0.64, 12);
+  if (sub) {
+    x.fillStyle = "#15181d";
+    x.font = "600 44px Georgia, serif";
+    x.fillText(sub, W / 2, H2 * 0.85);
+  }
+  x.restore();
+  return tex(c);
+}
+function buildBigFlag() {
+  const x = ISLAND.x + 2.1, z = ISLAND.z + 1.4, y = terrainH(x, z), H2 = 12;
+  box(M.concrete, x, y + 0.2, z, 1, 0.6, 1, { tile: 0.8, collide: true });
+  cyl(M.steel, x, y + H2 / 2, z, 0.11, 0.07, H2, { seg: 12 });
+  place(M.steel, new THREE35.SphereGeometry(0.14, 10, 8), x, y + H2 + 0.07, z, 0);
+  addCircle(x, z, 0.16, y, y + H2);
+  beam(M.rope, new THREE35.Vector3(x + 0.1, y + 1.2, z), new THREE35.Vector3(x + 0.1, y + H2 - 0.2, z), 8e-3, { seg: 3, cast: false });
+  const front = new THREE35.MeshStandardMaterial({ map: flagClothTex("badVIno", false), side: THREE35.FrontSide, roughness: 0.9 });
+  const back = new THREE35.MeshStandardMaterial({ map: flagClothTex("2026", true), side: THREE35.BackSide, roughness: 0.9 });
+  const FW = 6.4, FH = 4, top = y + H2 - 0.3;
+  const nx = Q.cloth + 6, ny = Math.round((Q.cloth + 6) * 0.62);
+  const dir2 = [Math.cos(0.64), Math.sin(0.64)];
+  const c = makeCloth({
+    nx,
+    ny,
+    material: front,
+    wind: 1.3,
+    stiff: 6,
+    drag: 0.982,
+    place: (u, v) => new THREE35.Vector3(x + dir2[0] * u * FW, top - v * FH, z + dir2[1] * u * FW),
+    pinFn: (i, j) => i === 0 && (j === 0 || j === ny - 1 || j % 2 === 0)
+  });
+  // обратная сторона — та же сетка ткани, свой материал с надписью «2026»
+  const bm = new THREE35.Mesh(c.geo, back);
+  bm.frustumCulled = false;
+  bm.receiveShadow = true;
+  scene.add(bm);
+  FLAGS.push({ x, z, cloth: c });
+}
+var GRAF = { n: 0, mats: null, geo: null };
+function graffitiTex(variant) {
+  const [c, x] = cv(512, 200);
+  x.clearRect(0, 0, 512, 200);
+  const col = ["#141414", "#a8231c", "#e9e4d6"][variant % 3];
+  x.save();
+  x.translate(256, 96);
+  x.rotate((variant - 1) * 0.06);
+  x.font = "italic bold 112px 'Arial Black', Impact, sans-serif";
+  x.textAlign = "center";
+  x.textBaseline = "middle";
+  x.shadowColor = col;
+  x.shadowBlur = 14;
+  x.fillStyle = col;
+  x.globalAlpha = 0.9;
+  x.fillText("badVIno", 0, 0);
+  x.shadowBlur = 0;
+  x.globalAlpha = 0.75;
+  // подтёки краски
+  for (let i = 0; i < 9; i++) {
+    const dx = sr(-200, 200), len = sr(12, 55);
+    x.fillRect(dx, 34, 3, len);
+    x.beginPath();
+    x.arc(dx + 1.5, 34 + len, 3, 0, 7);
+    x.fill();
+  }
+  x.restore();
+  return tex(c);
+}
+function graffitiOn(o, name, lx, lz, fy, piece, P2) {
+  const [u0, u1, y0, y1] = piece;
+  if (o.__graf !== name || o.__grafDone || u1 - u0 < 1.05 || y1 - y0 < 0.95 || y0 > 0.05) return;
+  o.__grafDone = true;
+  if (!GRAF.mats) {
+    GRAF.mats = [0, 1, 2].map((v) => new THREE35.MeshStandardMaterial({ map: graffitiTex(v), transparent: true, depthWrite: false, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+    GRAF.geo = new THREE35.PlaneGeometry(1, 0.39);
+  }
+  const nO = name === "front" ? [0, 1] : name === "back" ? [0, -1] : name === "left" ? [-1, 0] : [1, 0];
+  const [gx, gz] = P2(lx + nO[0] * (WALL_T / 2 + 0.012), lz + nO[1] * (WALL_T / 2 + 0.012));
+  const ang = o.rot + (name === "front" ? 0 : name === "back" ? Math.PI : name === "left" ? -Math.PI / 2 : Math.PI / 2);
+  const w = Math.min(1.35, (u1 - u0) * 0.92);
+  place(GRAF.mats[GRAF.n % 3], GRAF.geo, gx, fy + y0 + 0.62, gz, ang, [w, w, 1], { cast: false });
+}
+var LEAVES = { im: null, list: [], cap: 640 };
+var _lm = new THREE35.Matrix4();
+var _lq = new THREE35.Quaternion();
+var _le = new THREE35.Euler();
+var _ls = new THREE35.Vector3();
+var _lc = new THREE35.Color();
+function buildLeaves() {
+  const mat = new THREE35.MeshStandardMaterial({ side: THREE35.DoubleSide, roughness: 0.85 });
+  LEAVES.im = new THREE35.InstancedMesh(new THREE35.PlaneGeometry(1, 1), mat, LEAVES.cap);
+  LEAVES.im.count = 0;
+  LEAVES.im.frustumCulled = false;
+  LEAVES.im.receiveShadow = true;
+  LEAVES.im.setColorAt(0, _lc.setRGB(1, 1, 1));
+  scene.add(LEAVES.im);
+  NO_REFLECT.push(LEAVES.im);
+}
+function leafBurst(x, y, z, n2, sp, dir2, spread = 1.2) {
+  if (!LEAVES.im) return;
+  n2 = Math.round(n2 * (0.5 + Q.fx * 0.5));
+  for (let i = 0; i < n2; i++) {
+    if (LEAVES.list.length >= LEAVES.cap) LEAVES.list.shift();
+    const needle = sp !== "birch", k = srnd();
+    const col = needle ? k < 0.25 ? [0.36, 0.25, 0.12] : [0.16 + k * 0.06, 0.24 + k * 0.08, 0.1] : k < 0.3 ? [0.62, 0.52, 0.18] : [0.32, 0.42, 0.14];
+    LEAVES.list.push({
+      p: new THREE35.Vector3(x + sr(-spread, spread), y + sr(-spread, spread) * 0.6, z + sr(-spread, spread)),
+      v: new THREE35.Vector3((dir2?.x ?? 0) * sr(0, 2.2) + sr(-0.7, 0.7), sr(-0.2, 1.4), (dir2?.z ?? 0) * sr(0, 2.2) + sr(-0.7, 0.7)),
+      r: [srnd() * TAU, srnd() * TAU, srnd() * TAU],
+      w: [sr(-7, 7), sr(-5, 5), sr(-7, 7)],
+      sx: needle ? 0.016 : sr(0.05, 0.075),
+      sy: needle ? sr(0.08, 0.13) : sr(0.045, 0.07),
+      fall: needle ? sr(1.6, 2.4) : sr(0.6, 1),
+      life: sr(20, 34),
+      col,
+      ph: srnd() * 10,
+      landed: false
+    });
+  }
+}
+function updateLeaves(dt) {
+  const L = LEAVES.list, im3 = LEAVES.im;
+  if (!im3) return;
+  const t = FRAME.t, wx = WIND.dir.x * WIND.strength, wz = WIND.dir.y * WIND.strength;
+  let n2 = 0;
+  for (let i = L.length - 1; i >= 0; i--) {
+    const f = L[i];
+    f.life -= dt;
+    if (f.life <= 0) {
+      L.splice(i, 1);
+      continue;
+    }
+    if (!f.landed) {
+      f.v.y = Math.max(f.v.y - 9.8 * dt * 0.45, -f.fall);
+      const kd = Math.exp(-dt * 1.6);
+      f.v.x *= kd;
+      f.v.z *= kd;
+      const flutter = Math.sin(t * 3.1 + f.ph) * 0.7;
+      f.p.x += (f.v.x + wx * 1.1 + flutter * 0.5) * dt;
+      f.p.z += (f.v.z + wz * 1.1 + Math.cos(t * 2.7 + f.ph) * 0.35) * dt;
+      f.p.y += f.v.y * dt;
+      for (let k = 0; k < 3; k++) f.r[k] += f.w[k] * dt;
+      const water = lakeRho(f.p.x, f.p.z) < 1 ? MAP.WATER_Y : -1e9;
+      const g = Math.max(hFast(f.p.x, f.p.z), water);
+      if (f.p.y <= g + 0.02) {
+        f.p.y = g + 0.02;
+        f.landed = true;
+        f.r[0] = -Math.PI / 2 + sr(-0.2, 0.2);
+        f.r[1] = 0;
+        f.life = Math.min(f.life, water > -1e8 ? 8 : 24);
+      }
+    } else if (lakeRho(f.p.x, f.p.z) < 1) {
+      f.p.x += wx * 0.15 * dt;
+      f.p.z += wz * 0.15 * dt;
+    }
+    const fade = Math.min(1, f.life / 2.5);
+    _le.set(f.r[0], f.r[1], f.r[2]);
+    _lq.setFromEuler(_le);
+    _ls.set(f.sx * fade, f.sy * fade, 1);
+    im3.setMatrixAt(n2, _lm.compose(f.p, _lq, _ls));
+    im3.setColorAt(n2, _lc.setRGB(f.col[0], f.col[1], f.col[2]));
+    n2++;
+  }
+  im3.count = n2;
+  im3.instanceMatrix.needsUpdate = true;
+  if (im3.instanceColor) im3.instanceColor.needsUpdate = true;
+}
+function breakTwig(t, x, y, z, dir2) {
+  const G2 = treeGeo(t), L = sr(0.35, 0.8) * (t.h / 16);
+  const mesh = new THREE35.Mesh(branchGeo(G2.sp), [M.deadwood, G2.foliage]);
+  mesh.scale.setScalar(L);
+  mesh.position.set(x, y, z);
+  scene.add(mesh);
+  const b = addBody({
+    shape: "box",
+    size: [L, 0.1 * L, 0.3 * L],
+    mass: 1.5 * L,
+    pos: mesh.position,
+    quat: new THREE35.Quaternion().setFromEuler(new THREE35.Euler(sr(-0.4, 0.4), srnd() * TAU, sr(-0.4, 0.4))),
+    vel: new THREE35.Vector3(dir2.x * sr(0.5, 2), sr(-0.5, 0.8), dir2.z * sr(0.5, 2)),
+    ang: new THREE35.Vector3(sr(-3, 3), sr(-3, 3), sr(-3, 3)),
+    life: sr(25, 40),
+    friction: 0.9,
+    restitution: 0.05,
+    damp: [0.35, 0.6],
+    float: 1.6,
+    rad: 0.06 * L,
+    onDone: () => scene.remove(mesh)
+  });
+  if (!b) {
+    scene.remove(mesh);
+    return;
+  }
+  b.sync = (p, q, f) => {
+    mesh.position.copy(p);
+    mesh.quaternion.copy(q);
+    mesh.scale.setScalar(L * f);
+  };
+  woodCrack(camera.position.distanceTo(mesh.position), 0, 0.35);
+}
+// пуля прошивает кроны: сыплется хвоя/листва, иногда отлетает ветка
+function shotThroughCrowns(a, dir2, maxD) {
+  const n2 = Math.min(maxD, 160);
+  let last = null, hits = 0;
+  for (let d = 1.2; d < n2 && hits < 3; d += 0.4) {
+    const x = a.x + dir2.x * d, y = a.y + dir2.y * d, z = a.z + dir2.z * d;
+    const t = crownAt(x, y, z);
+    if (!t || t === last) continue;
+    last = t;
+    hits++;
+    leafBurst(x, y, z, 7 + srnd() * 9, t.sp, dir2, 0.6);
+    if (srnd() < 0.35) breakTwig(t, x, y, z, dir2);
+  }
+}
+
 // src/main.js
 var locked = false;
 var searchlight = null;
@@ -14924,6 +15387,8 @@ var STEPS = [
   ["Следы фронта", () => buildWrecks()],
   ["Техника и укрытия", () => {
     buildProps();
+    buildCrates();
+    buildBigFlag();
     buildGlass();
   }],
   ["Физика: статический мир", () => {
@@ -14944,6 +15409,7 @@ var STEPS = [
     buildFootprints();
     buildInteract();
     buildBirds();
+    buildLeaves();
   }],
   ["Огонь и погода", () => {
     buildFire();
@@ -14987,7 +15453,7 @@ function finish() {
   searchlight.target.position.set(0, -0.35, -1);
   camera.add(searchlight, searchlight.target);
   TIME.h = 9;
-  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор · M — карта · P — облёт · R — на базу\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
+  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор, у ящика — пополнить боезапас · X — перезарядка · M — карта · P — облёт · R — на базу\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
   BLAST.hooks.push((x, y, z, size) => scareBirds(x, y, z, 70 + 45 * size, 1));
   WEATHER.onStrike = (x, y, z, dist) => {
     thunder(dist);
@@ -15157,7 +15623,10 @@ function finish() {
     b.onclick = () => {
       if (k === QNAME) return;
       localStorage.setItem("tikhiy_bor_q", k);
-      location.search = "?q=" + k;
+      const sp = new URLSearchParams(location.search);
+      sp.set("q", k);
+      if (!sp.has("weather") && WEATHER.auto === false) sp.set("weather", WEATHER.mode);
+      location.search = "?" + sp.toString();
     };
     qrow.appendChild(b);
   }
@@ -15174,7 +15643,8 @@ function finish() {
     wrow.appendChild(b);
   }
   $("#g_go").onclick = () => {
-    spawnAt(PL.team, "drone");
+    // после первого входа кнопка продолжает игру с того же места; смена команды — респаун
+    if (!PAUSE.entered || PAUSE.team !== PL.team) spawnAt(PL.team, "drone");
     enter();
   };
   $("#g_cine").onclick = () => {
@@ -15190,10 +15660,24 @@ function enter() {
   renderer.domElement.requestPointerLock?.();
   $("#gate").classList.add("hide");
   $("#hud").classList.add("on");
+  PAUSE.on = false;
+  PAUSE.entered = true;
+  PAUSE.team = PL.team;
+  $("#g_go").textContent = "Продолжить";
+  clock.getDelta();
+}
+var PAUSE = { on: false, entered: false, team: null };
+function pauseGame() {
+  if (PAUSE.on || !PAUSE.entered) return;
+  PAUSE.on = true;
+  AUDIO.ctx?.suspend?.();
+  $("#gate").classList.remove("hide");
+  $("#hud").classList.remove("on");
+  for (const k in keys) keys[k] = false;
 }
 addEventListener("keydown", (e) => {
   keys[e.code] = true;
-  if (["Space", "Tab", "KeyC", "ControlLeft", "F2", "F3"].includes(e.code)) e.preventDefault();
+  if (["Space", "Tab", "KeyC", "F2", "F3"].includes(e.code)) e.preventDefault();
   if (!window.MAP_READY) return;
   if (PL.cine && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyG"].includes(e.code)) {
     stopCinematic();
@@ -15206,8 +15690,12 @@ addEventListener("keydown", (e) => {
       toast(PL.mode === "drone" ? "дрон" : "пешком");
       break;
     case "KeyF":
+      if (resupply()) break;
       PL.light = !PL.light;
       toast("прожектор: " + (PL.light ? "вкл" : "выкл"));
+      break;
+    case "KeyX":
+      if (startReload()) toast("перезарядка");
       break;
     case "KeyM":
       $("#map").classList.toggle("on");
@@ -15283,6 +15771,7 @@ addEventListener("keydown", (e) => {
     }
     case "Escape":
       $("#map").classList.remove("on");
+      if (!locked) pauseGame();
       break;
   }
 });
@@ -15308,11 +15797,7 @@ renderer.domElement.addEventListener("mousedown", (e) => {
 });
 document.addEventListener("pointerlockchange", () => {
   locked = document.pointerLockElement === renderer.domElement;
-  if (!locked && window.MAP_READY) {
-    $("#gate").classList.remove("hide");
-    $("#hud").classList.remove("on");
-    for (const k in keys) keys[k] = false;
-  }
+  if (!locked && window.MAP_READY) pauseGame();
 });
 addEventListener("contextmenu", (e) => e.preventDefault());
 addEventListener("resize", () => {
@@ -15363,6 +15848,9 @@ function frame2(dt, render = true) {
   updateWrecks(dt);
   updateBirds(dt, PL, SKY);
   updateInteract(dt, PL, keys, SKY);
+  updateCrates();
+  updateAmmo(dt);
+  updateLeaves(dt);
   burnPlayer(dt, Math.max(heatAt(PL.pos.x, PL.pos.z), structHeatAt(PL.pos.x, PL.pos.z)));
   const ground = hFast(camera.position.x, camera.position.z);
   updateParticles(dt, { night: SKY.night, h: TIME.h, fogColor: SKY.fogColor, ground, light: Math.max(0.12, (0.2 + 0.8 * (1 - SKY.night)) * (1 - WEATHER.ov * 0.3)) });
@@ -15432,6 +15920,8 @@ function setLevel(l) {
 function loop() {
   requestAnimationFrame(loop);
   const dt = Math.min(clock.getDelta(), 0.05);
+  // пауза: мир (время суток, огонь, физика, погода) замирает, пока открыто меню
+  if (PAUSE.on) return;
   frame2(dt);
   adaptResolution(dt);
   fpsAcc += dt;
