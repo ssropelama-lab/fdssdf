@@ -1,0 +1,13 @@
+{
+  "name": "grenades",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.23.1",
+    "three": "0.166.1"
+  }
+}

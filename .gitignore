@@ -1,1 +1,5 @@
 .hoplite/
+node_modules/
+grenades/dev/
+grenades/m67.html
+grenades/m84.html
