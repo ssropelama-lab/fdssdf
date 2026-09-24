@@ -1229,7 +1229,8 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, Q.pixel));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = Q.softShadow ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
+// AgX мягче сжимает яркие огни (пожар, взрывы, фонари) и не выжигает их в плоские пятна, как ACES
+renderer.toneMapping = THREE.AgXToneMapping;
 renderer.toneMappingExposure = 1;
 document.body.appendChild(renderer.domElement);
 var scene = new THREE.Scene();
@@ -3625,10 +3626,16 @@ function injectWind(mat, o = {}) {
   const blast = (o.blast ?? 1).toFixed(3);
   const trample = !!o.trample;
   const burn = !!o.burn;
+  const dither = !!o.dither;
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
     Object.assign(sh.uniforms, windUniforms);
+    if (dither) {
+      // плавная смена LOD: экземпляр растворяется «шумом» по aHide (0 — виден, 1 — скрыт); без атрибута aHide = 0
+      sh.vertexShader = "attribute float aHide;\nvarying float vHide;\n" + sh.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\n#ifdef USE_INSTANCING\nvHide = aHide;\n#else\nvHide = 0.0;\n#endif");
+      sh.fragmentShader = "varying float vHide;\n" + sh.fragmentShader.replace("#include <clipping_planes_fragment>", "#include <clipping_planes_fragment>\nif (vHide > 0.001 && fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) < vHide) discard;");
+    }
     if (burn) {
       Object.assign(sh.uniforms, FXU);
       sh.fragmentShader = FXU_GLSL + "varying vec2 vBurn;\n" + sh.fragmentShader.replace("#include <color_fragment>", "#include <color_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.035, 0.03, 0.025), clamp(vBurn.x * 1.2, 0.0, 1.0));").replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance = totalEmissiveRadiance * (1.0 - vBurn.x) + vec3(1.0, 0.36, 0.06) * vBurn.y * (0.7 + 0.3 * sin(uFxT * 11.0 + vBurn.y * 20.0)) * 1.6;");
@@ -3651,8 +3658,11 @@ function injectWind(mat, o = {}) {
         float k = pow(hh / ${refH}, ${stiff});
         float ph = dot(root.xz, vec2(0.31, 0.27));
         float sway = sin(uTime * 1.05 + ph) * 0.55 + sin(uTime * 2.2 + ph * 1.7) * 0.25 + sin(uTime * 0.43 + ph * 0.5) * 0.35;
-        vec3 disp = vec3(uWind.x, 0.0, uWind.y) * (0.55 + sway) * uWindAmp * ${amp} * k;
-        float fl = ${flutter} * uWindAmp * min(k, 1.5);
+        // порыв: широкая волна бежит по лесу по ветру, сверху — мелкая дрожь хвои
+        float gw = 0.5 + 0.5 * sin(dot(root.xz, uWind) * 0.045 - uTime * 1.25 + sin(uTime * 0.17 + root.x * 0.01) * 2.0);
+        float gust = gw * gw * gw * uWindAmp;
+        vec3 disp = vec3(uWind.x, 0.0, uWind.y) * (0.55 + sway + gust * 1.1) * uWindAmp * ${amp} * k;
+        float fl = ${flutter} * uWindAmp * min(k, 1.5) * (1.0 + gust * 1.6);
         disp += vec3(sin(uTime * 6.1 + wp.x * 2.3 + wp.y * 1.3), sin(uTime * 5.3 + wp.z * 2.1) * 0.5,
                      cos(uTime * 6.7 + wp.z * 2.2 + wp.y * 1.1)) * fl;
         // ударная волна: фронт ~70 м/с, затухающее колебание после прохода
@@ -3678,7 +3688,7 @@ function injectWind(mat, o = {}) {
     );
   };
   const key2 = mat.customProgramCacheKey();
-  mat.customProgramCacheKey = () => key2 + "|wind" + amp + stiff + refH + flutter + trample + blast + burn;
+  mat.customProgramCacheKey = () => key2 + "|wind" + amp + stiff + refH + flutter + trample + blast + burn + dither;
   return mat;
 }
 function injectStructFX(mat) {
@@ -4293,7 +4303,7 @@ function chooseSpecies(x, z, R2) {
 function buildForest() {
   const R2 = rng(9001);
   M.spruce.vertexColors = M.pine.vertexColors = M.birch.vertexColors = true;
-  const windCrown = { amp: 0.55, stiff: 2.2, refH: 18, flutter: 0.035, blast: 0.6 };
+  const windCrown = { amp: 0.55, stiff: 2.2, refH: 18, flutter: 0.035, blast: 0.6, dither: true };
   const windTrunk = { amp: 0.55, stiff: 2.2, refH: 18, flutter: 0, blast: 0.6 };
   for (const k of ["spruce", "pine", "birch"]) injectWind(M[k], windCrown);
   for (const k of ["barkSpruce", "barkPine", "barkBirch"]) injectWind(M[k], windTrunk);
@@ -4452,29 +4462,47 @@ function buildFarForest(R2) {
   farIM = { count: total };
 }
 var lastLOD = new V3(1e9, 0, 0);
+function lodHide(im3) {
+  let a = im3.geometry.getAttribute("aHide");
+  if (!a || a.count < im3.instanceMatrix.count) {
+    a = new THREE6.InstancedBufferAttribute(new Float32Array(im3.instanceMatrix.count), 1);
+    a.setUsage(THREE6.DynamicDrawUsage);
+    im3.geometry.setAttribute("aHide", a);
+  }
+  return a;
+}
 function updateForestLOD(force) {
   const cp = camera.position;
-  if (!force && lastLOD.distanceToSquared(cp) < 16) return;
+  if (!force && lastLOD.distanceToSquared(cp) < 6.25) return;
   lastLOD.copy(cp);
-  const R2 = Q.treeNearR * Q.treeNearR;
+  // полоса перехода: в ней дерево есть в обоих LOD, и один растворяется, пока проявляется другой
+  const R = Q.treeNearR, band = Math.max(6, R * 0.16), r0 = R - band / 2, r1 = R + band / 2;
+  const R0 = r0 * r0, R1 = r1 * r1;
   for (const L of LODS) {
     let hi = 0, lo = 0;
+    const hA = lodHide(L.hiIM).array, lA = lodHide(L.loIM).array;
     for (const t of L.trees) {
       if (t.dead || t.broken) continue;
       const dx = t.x - cp.x, dy = t.y + t.h * 0.5 - cp.y, dz = t.z - cp.z;
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 < R2) {
+      const f = d2 <= R0 ? 0 : d2 >= R1 ? 1 : smoothstep(r0, r1, Math.sqrt(d2));
+      if (f < 1) {
         L.hiIM.setMatrixAt(hi, t.matrix);
         L.hiIM.setColorAt(hi, t.color);
+        hA[hi] = f;
         hi++;
-      } else {
+      }
+      if (f > 0) {
         L.loIM.setMatrixAt(lo, t.matrix);
         L.loIM.setColorAt(lo, t.color);
+        lA[lo] = 1 - f;
         lo++;
       }
     }
     L.hiIM.count = hi;
     L.loIM.count = lo;
+    L.hiIM.geometry.attributes.aHide.needsUpdate = true;
+    L.loIM.geometry.attributes.aHide.needsUpdate = true;
     L.hiIM.instanceMatrix.needsUpdate = true;
     L.loIM.instanceMatrix.needsUpdate = true;
     if (L.hiIM.instanceColor) L.hiIM.instanceColor.needsUpdate = true;
@@ -4566,9 +4594,17 @@ async function initPhysics() {
   try {
     const opt = {};
     if (window.AMMO_WASM_B64) {
-      const bin = atob(window.AMMO_WASM_B64), u = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      // декодирование встроенного wasm нативно (data: URL), без побайтового цикла по atob; запасной путь — старый
+      let u = null;
+      try {
+        u = new Uint8Array(await (await fetch("data:application/wasm;base64," + window.AMMO_WASM_B64)).arrayBuffer());
+      } catch (e) {
+        const bin = atob(window.AMMO_WASM_B64);
+        u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      }
       opt.wasmBinary = u;
+      window.AMMO_WASM_B64 = null;
     } else opt.locateFile = (f) => new URL("lib/ammo/" + f, document.baseURI).href;
     A = await window.Ammo(opt);
   } catch (e) {
@@ -5549,17 +5585,22 @@ function updateWeather(dt, sky2) {
 var weatherStats = () => ({ weather: WEATHER.mode, rain: +WEATHER.rain.toFixed(2), wet: +WEATHER.wet.toFixed(2) });
 
 // src/world/sky.js
+// ключи суток. Ночь — глубокий сине-лунный, не серый; предрассветье — синий час; рассвет — тёплый персик/розовый
+// с низким солнцем и лёгкой дымкой (туман не ярче неба у горизонта); закат/сумерки — симметрично, но теплее и пыльнее
 var KEYS = [
-  { h: 0, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" },
-  { h: 4.4, sun: [0.55, 0.62, 0.85], sunI: 0.2, hs: [0.12, 0.14, 0.24], hg: [0.04, 0.045, 0.05], hI: 0.5, fog: [0.08, 0.09, 0.13], fogD: 0.024, exp: 1.35, turb: 3, ray: 1.6, mie: 0.012, label: "предрассвет" },
-  { h: 6.2, sun: [1, 0.5, 0.28], sunI: 1.7, hs: [0.54, 0.45, 0.44], hg: [0.24, 0.19, 0.14], hI: 0.7, fog: [0.6, 0.47, 0.42], fogD: 0.021, exp: 1.12, turb: 5.5, ray: 3.2, mie: 0.03, label: "рассвет" },
-  { h: 8.3, sun: [1, 0.84, 0.66], sunI: 3.8, hs: [0.64, 0.68, 0.74], hg: [0.42, 0.38, 0.28], hI: 0.86, fog: [0.64, 0.68, 0.7], fogD: 78e-4, exp: 1.02, turb: 3, ray: 1.6, mie: 0.01, label: "утро" },
-  { h: 13, sun: [1, 0.96, 0.9], sunI: 4.9, hs: [0.64, 0.7, 0.78], hg: [0.46, 0.41, 0.3], hI: 0.92, fog: [0.66, 0.72, 0.78], fogD: 48e-4, exp: 0.95, turb: 1.9, ray: 1.1, mie: 5e-3, label: "день" },
-  { h: 17.3, sun: [1, 0.87, 0.68], sunI: 4, hs: [0.64, 0.66, 0.7], hg: [0.46, 0.4, 0.29], hI: 0.88, fog: [0.68, 0.68, 0.66], fogD: 66e-4, exp: 1, turb: 2.8, ray: 1.5, mie: 0.01, label: "день" },
-  { h: 19.5, sun: [1, 0.45, 0.19], sunI: 3.1, hs: [0.58, 0.4, 0.34], hg: [0.24, 0.17, 0.12], hI: 0.62, fog: [0.62, 0.38, 0.26], fogD: 0.0105, exp: 1.02, turb: 6.5, ray: 3.6, mie: 0.042, label: "закат" },
-  { h: 20.8, sun: [0.85, 0.3, 0.16], sunI: 0.6, hs: [0.3, 0.28, 0.42], hg: [0.11, 0.1, 0.1], hI: 0.54, fog: [0.34, 0.24, 0.28], fogD: 0.016, exp: 1.18, turb: 5, ray: 3, mie: 0.03, label: "сумерки" },
-  { h: 22, sun: [0.55, 0.64, 0.88], sunI: 0.26, hs: [0.1, 0.13, 0.22], hg: [0.035, 0.045, 0.055], hI: 0.44, fog: [0.07, 0.08, 0.12], fogD: 0.02, exp: 1.38, turb: 3, ray: 1.2, mie: 8e-3, label: "ночь" },
-  { h: 24, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" }
+  { h: 0, sun: [0.5, 0.62, 0.95], sunI: 0.36, hs: [0.035, 0.06, 0.13], hg: [0.012, 0.018, 0.028], hI: 0.46, fog: [0.018, 0.03, 0.058], fogD: 0.016, exp: 1.5, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" },
+  { h: 4.3, sun: [0.52, 0.6, 0.9], sunI: 0.24, hs: [0.07, 0.1, 0.22], hg: [0.02, 0.026, 0.04], hI: 0.5, fog: [0.05, 0.07, 0.13], fogD: 0.018, exp: 1.45, turb: 3, ray: 1.6, mie: 0.012, label: "предрассвет" },
+  { h: 5.3, sun: [0.95, 0.5, 0.42], sunI: 0.3, hs: [0.22, 0.19, 0.34], hg: [0.05, 0.045, 0.055], hI: 0.56, fog: [0.2, 0.15, 0.23], fogD: 0.0135, exp: 1.34, turb: 5, ray: 3.4, mie: 0.035, label: "рассвет" },
+  { h: 6.2, sun: [1, 0.5, 0.24], sunI: 2.1, hs: [0.46, 0.37, 0.42], hg: [0.2, 0.14, 0.1], hI: 0.72, fog: [0.5, 0.36, 0.33], fogD: 0.0082, exp: 1.12, turb: 7, ray: 3.8, mie: 0.05, label: "рассвет" },
+  { h: 7.2, sun: [1, 0.7, 0.44], sunI: 3.2, hs: [0.56, 0.58, 0.66], hg: [0.34, 0.28, 0.19], hI: 0.82, fog: [0.66, 0.6, 0.55], fogD: 0.0068, exp: 1.04, turb: 4.5, ray: 2.2, mie: 0.02, label: "утро" },
+  { h: 8.3, sun: [1, 0.84, 0.66], sunI: 3.8, hs: [0.62, 0.67, 0.75], hg: [0.42, 0.38, 0.28], hI: 0.86, fog: [0.64, 0.68, 0.72], fogD: 78e-4, exp: 1.02, turb: 3, ray: 1.6, mie: 0.01, label: "утро" },
+  { h: 13, sun: [1, 0.96, 0.9], sunI: 4.9, hs: [0.62, 0.7, 0.8], hg: [0.46, 0.41, 0.3], hI: 0.92, fog: [0.64, 0.71, 0.8], fogD: 48e-4, exp: 0.95, turb: 1.9, ray: 1.1, mie: 5e-3, label: "день" },
+  { h: 17.3, sun: [1, 0.87, 0.68], sunI: 4, hs: [0.64, 0.66, 0.72], hg: [0.46, 0.4, 0.29], hI: 0.88, fog: [0.68, 0.68, 0.68], fogD: 66e-4, exp: 1, turb: 2.8, ray: 1.5, mie: 0.01, label: "день" },
+  { h: 19.5, sun: [1, 0.45, 0.19], sunI: 3.1, hs: [0.58, 0.4, 0.34], hg: [0.24, 0.17, 0.12], hI: 0.62, fog: [0.62, 0.4, 0.28], fogD: 0.0105, exp: 1.02, turb: 6.5, ray: 3.6, mie: 0.042, label: "закат" },
+  { h: 20.8, sun: [0.85, 0.32, 0.18], sunI: 0.6, hs: [0.24, 0.2, 0.34], hg: [0.08, 0.065, 0.07], hI: 0.56, fog: [0.2, 0.15, 0.22], fogD: 0.015, exp: 1.22, turb: 5, ray: 3, mie: 0.03, label: "сумерки" },
+  { h: 21.6, sun: [0.55, 0.62, 0.9], sunI: 0.26, hs: [0.08, 0.1, 0.22], hg: [0.024, 0.03, 0.045], hI: 0.48, fog: [0.055, 0.07, 0.13], fogD: 0.017, exp: 1.4, turb: 3, ray: 1.4, mie: 0.01, label: "сумерки" },
+  { h: 22.6, sun: [0.52, 0.63, 0.94], sunI: 0.3, hs: [0.045, 0.07, 0.15], hg: [0.015, 0.02, 0.032], hI: 0.46, fog: [0.025, 0.038, 0.07], fogD: 0.016, exp: 1.48, turb: 2.5, ray: 0.9, mie: 6e-3, label: "ночь" },
+  { h: 24, sun: [0.5, 0.62, 0.95], sunI: 0.36, hs: [0.035, 0.06, 0.13], hg: [0.012, 0.018, 0.028], hI: 0.46, fog: [0.018, 0.03, 0.058], fogD: 0.016, exp: 1.5, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" }
 ];
 var PHASES = [9, 13, 18.6, 19.9, 21, 23.5, 3, 5.9];
 var TIME = { h: 9, speed: 1 / 45, paused: false };
@@ -5572,8 +5613,12 @@ var SKY = {
   fogColor: new THREE10.Color(),
   wind: 0.5,
   lampOn: 0,
-  moonUp: 0
+  moonUp: 0,
+  shadowExt: 55
 };
+var _lx = new THREE10.Vector3();
+var _ly = new THREE10.Vector3();
+var _upY = new THREE10.Vector3(0, 1, 0);
 var SUNRISE = 6.2;
 var SUNSET = 20.8;
 function keysAt(h) {
@@ -5611,6 +5656,21 @@ var sunMesh;
 var clouds;
 function buildSky() {
   sky = new Sky();
+  // горизонт неба сводится к цвету тумана, а ночью/в сумерках небо не проваливается в чёрное:
+  // иначе затуманенные силуэты леса светятся серым на тёмном небе
+  Object.assign(sky.material.uniforms, { uHorizon: { value: new THREE10.Color() }, uHorizonK: { value: 0.8 }, uFloor: { value: new THREE10.Color() }, uGlow: { value: new THREE10.Color() } });
+  sky.material.fragmentShader = "uniform vec3 uHorizon; uniform float uHorizonK; uniform vec3 uFloor; uniform vec3 uGlow;\n" + sky.material.fragmentShader.replace(
+    "gl_FragColor = vec4( retColor, 1.0 );",
+    `float hz = pow(1.0 - clamp(direction.y, 0.0, 1.0), 4.0);
+      retColor = max(retColor, uFloor * (0.45 + 0.55 * hz));
+      // зорька: тёплая полоса у горизонта со стороны солнца, пока оно чуть ниже/выше горизонта
+      vec2 sa = normalize(vSunDirection.xz + 1e-4), da = normalize(direction.xz + 1e-4);
+      float toward = pow(max(dot(sa, da), 0.0), 2.5);
+      float band = pow(1.0 - clamp(direction.y, 0.0, 1.0), 5.0);
+      retColor += uGlow * (toward * band + 0.18 * band * (1.0 - toward));
+      retColor = mix(retColor, uHorizon, hz * uHorizonK);
+      gl_FragColor = vec4( retColor, 1.0 );`
+  );
   sky.scale.setScalar(4e3);
   scene.add(sky);
   hemi = new THREE10.HemisphereLight(10137800, 4210735, 0.8);
@@ -5738,6 +5798,8 @@ function updateSky(dt) {
   SKY.label = k.label;
   const night = clamp(1 - smoothstep(-0.1, 0.08, _d.y), 0, 1);
   SKY.night = night;
+  // «глубокая» ночь для цветокоррекции: в синий час и на зорьке кадр ещё цветной, не лунно-синий
+  SKY.deep = clamp(1 - smoothstep(-0.3, -0.07, _d.y), 0, 1);
   SKY.sunDir.copy(_d);
   SKY.wind = WIND.strength;
   SKY.lampOn = clamp(smoothstep(0.1, -0.05, _d.y), 0, 1);
@@ -5761,7 +5823,10 @@ function updateSky(dt) {
   SKY.sunColor.copy(dir.color);
   SKY.sunI = useSun ? I : 0;
   const agl = Math.max(0, camera.position.y - hFast(camera.position.x, camera.position.z));
-  const ext = clamp(55 + agl * 1.1, 55, 190);
+  // размер области теней меняется ступенями с гистерезисом: иначе у дрона тени «плывут» каждый кадр
+  const want = clamp(55 + agl * 1.1, 55, 190);
+  if (!(Math.abs(want - SKY.shadowExt) < 12)) SKY.shadowExt = Math.min(190, Math.ceil(want / 15) * 15);
+  const ext = SKY.shadowExt;
   const sc = dir.shadow.camera;
   if (sc.right !== ext) {
     sc.left = -ext;
@@ -5774,9 +5839,14 @@ function updateSky(dt) {
   _tgt.y = 0;
   _tgt.normalize().multiplyScalar(ext * 0.45).add(camera.position);
   _tgt.y = hFast(_tgt.x, _tgt.z);
+  // привязка к сетке текселей в пространстве света (оси теневой камеры), а не по мировым XZ
   const texel = ext * 2 / Q.shadow;
-  _tgt.x = Math.round(_tgt.x / texel) * texel;
-  _tgt.z = Math.round(_tgt.z / texel) * texel;
+  _lx.crossVectors(_upY, L);
+  if (_lx.lengthSq() < 1e-6) _lx.set(1, 0, 0);
+  _lx.normalize();
+  _ly.crossVectors(L, _lx);
+  const su = Math.round(_tgt.dot(_lx) / texel) * texel, sv = Math.round(_tgt.dot(_ly) / texel) * texel, sw = _tgt.dot(L);
+  _tgt.copy(_lx).multiplyScalar(su).addScaledVector(_ly, sv).addScaledVector(L, sw);
   dir.target.position.copy(_tgt);
   dir.position.copy(_tgt).addScaledVector(L, 200);
   dir.target.updateMatrixWorld();
@@ -5794,7 +5864,8 @@ function updateSky(dt) {
   scene.fog.color.lerp(_grey.setRGB(0.42, 0.46, 0.56), Math.min(0.6, fl * 0.45));
   SKY.fogColor.copy(scene.fog.color);
   scene.fog.density = k.fogD * lerp(1, 0.22, smoothstep(8, 90, agl)) * (1 + WEATHER.fogK * 2.4);
-  renderer.toneMappingExposure = k.exp * (1 + 0.12 * ov);
+  // AgX не делит экспозицию на 0.6, как ACES в three.js — компенсируем
+  renderer.toneMappingExposure = k.exp * (1 + 0.12 * ov) * 1.55;
   sunMesh.position.copy(camera.position).addScaledVector(_d, 1300);
   sunMesh.lookAt(camera.position);
   sunMesh.material.opacity = clamp(smoothstep(-0.08, 0.05, _d.y), 0, 1) * 0.55 * (1 - ov);
@@ -5821,6 +5892,12 @@ function updateSky(dt) {
   cu.uDense.value = smoothstep(0.55, 0.95, ov);
   u.turbidity.value = k.turb + ov * 9;
   u.rayleigh.value = k.ray * (1 - ov * 0.6);
+  u.uHorizon.value.copy(scene.fog.color);
+  u.uHorizonK.value = clamp(0.35 + k.fogD * 30 + ov * 0.4 + WEATHER.fogK * 0.3, 0, 0.92);
+  u.uFloor.value.setRGB(k.hs[0] * 0.32, k.hs[1] * 0.32, k.hs[2] * 0.32).multiplyScalar(1 - ov * 0.3);
+  const tw = clamp(1 - Math.abs(_d.y + 0.03) / 0.13, 0, 1) * (1 - ov * 0.8);
+  u.uGlow.value.setRGB(0.55, 0.24, 0.12).multiplyScalar(tw * (TIME.h < 12 ? 1 : 0.9));
+  SKY.golden = clamp(1 - Math.abs(_d.y - 0.06) / 0.2, 0, 1) * (1 - ov * 0.7);
   return k;
 }
 function fmtTime(h) {
@@ -5862,7 +5939,9 @@ function clumpGeo(planes, w, h, segs = 2) {
   merged.setIndex(idx2);
   return merged;
 }
-function tuftGeo(blades = Q.tex > 0.9 ? 14 : 11, segs = Q.tex > 0.6 ? 4 : 3) {
+function tuftGeo(blades = Q.tex > 0.9 ? 20 : 15, segs = Q.tex > 0.6 ? 5 : 3) {
+  // пучок: тонкие заострённые листья разной длины, изогнутые и чуть закрученные;
+  // низ пучка темнее (затенение), кончики — светлее и суше
   const pos = [], nrm = [], col = [], idx2 = [];
   let v = 0;
   const R2 = (k) => {
@@ -5870,20 +5949,22 @@ function tuftGeo(blades = Q.tex > 0.9 ? 14 : 11, segs = Q.tex > 0.6 ? 4 : 3) {
     return x - Math.floor(x);
   };
   for (let b = 0; b < blades; b++) {
-    const a = R2(b) * Math.PI * 2, rr = Math.sqrt(R2(b + 17)) * 0.13;
+    const a = R2(b) * Math.PI * 2, rr = Math.sqrt(R2(b + 17)) * 0.1;
     const bx = Math.cos(a) * rr, bz = Math.sin(a) * rr;
-    const h = 0.32 + R2(b + 31) * 0.5, w = 0.022 + R2(b + 43) * 0.018;
-    const lean = 0.15 + R2(b + 57) * 0.45, la = a + (R2(b + 71) - 0.5) * 1.2;
-    const lx = Math.cos(la), lz = Math.sin(la), sx = -lz, sz = lx;
-    const dry = R2(b + 83);
+    const short = R2(b + 5) < 0.45;
+    const h = short ? 0.1 + R2(b + 31) * 0.14 : 0.2 + R2(b + 31) * 0.28, w = 0.007 + R2(b + 43) * 0.008;
+    const lean = 0.2 + R2(b + 57) * 0.55, la = a + (R2(b + 71) - 0.5) * 1.1, twist = (R2(b + 91) - 0.5) * 1.4;
+    const lx = Math.cos(la), lz = Math.sin(la);
+    const dry = R2(b + 83), hue = R2(b + 13);
     for (let k = 0; k <= segs; k++) {
-      const t = k / segs, y = h * t, off = lean * h * t * t;
-      const cx = bx + lx * off, cz = bz + lz * off, ww = w * (1 - t * 0.92);
+      const t = k / segs, y = h * (t - lean * 0.35 * t * t), off = lean * h * t * t;
+      const cx = bx + lx * off, cz = bz + lz * off, ww = w * (1 - Math.pow(t, 1.6)) + 4e-4;
+      const ang = la + Math.PI / 2 + twist * t, sx = Math.cos(ang), sz = Math.sin(ang);
       for (const e of [-1, 1]) {
         pos.push(cx + sx * ww * e, y, cz + sz * ww * e);
-        nrm.push(lx * 0.35 + sx * e * 0.25, 0.85, lz * 0.35 + sz * e * 0.25);
-        const g2 = 0.35 + 0.65 * t;
-        col.push(g2 * (0.62 + dry * 0.35 * t), g2 * (0.9 + dry * 0.05), g2 * (0.42 - dry * 0.12 * t));
+        nrm.push(lx * (0.25 + t * 0.35) + sx * e * 0.3, 0.8, lz * (0.25 + t * 0.35) + sz * e * 0.3);
+        const ao = 0.28 + 0.72 * Math.pow(t, 0.8), tip = dry * t * t;
+        col.push(ao * (0.5 + hue * 0.14 + tip * 0.5), ao * (0.8 + hue * 0.1 + tip * 0.02), ao * (0.3 + hue * 0.06 - tip * 0.12));
       }
       if (k < segs) {
         const q = v + k * 2;
@@ -5891,14 +5972,15 @@ function tuftGeo(blades = Q.tex > 0.9 ? 14 : 11, segs = Q.tex > 0.6 ? 4 : 3) {
       }
     }
     v += (segs + 1) * 2;
-    if (R2(b + 97) > 0.72) {
-      const tx = bx + lx * lean * h, tz = bz + lz * lean * h, L = 0.07 + R2(b + 101) * 0.05, sw = 0.012;
+    if (!short && R2(b + 97) > 0.86) {
+      // метёлка на стебле
+      const tx = bx + lx * lean * h, tz = bz + lz * lean * h, L = 0.05 + R2(b + 101) * 0.04, sw = 0.01, sx = -lz, sz = lx;
       for (const [ex, ez] of [[sx, sz], [lx, lz]]) {
         const q = v;
-        pos.push(tx - ex * sw, h - 0.01, tz - ez * sw, tx + ex * sw, h - 0.01, tz + ez * sw, tx + lx * 0.03 - ex * sw * 0.5, h + L, tz + lz * 0.03 - ez * sw * 0.5, tx + lx * 0.03 + ex * sw * 0.5, h + L, tz + lz * 0.03 + ez * sw * 0.5);
+        pos.push(tx - ex * sw, h * 0.92, tz - ez * sw, tx + ex * sw, h * 0.92, tz + ez * sw, tx + lx * 0.02 - ex * sw * 0.4, h * 0.92 + L, tz + lz * 0.02 - ez * sw * 0.4, tx + lx * 0.02 + ex * sw * 0.4, h * 0.92 + L, tz + lz * 0.02 + ez * sw * 0.4);
         for (let r = 0; r < 4; r++) {
           nrm.push(lx * 0.3, 0.9, lz * 0.3);
-          col.push(0.78, 0.72, 0.46);
+          col.push(0.66, 0.6, 0.4);
         }
         idx2.push(q, q + 1, q + 2, q + 1, q + 3, q + 2);
         v += 4;
@@ -5927,8 +6009,9 @@ function buildGrass() {
   scene.add(im3);
   NO_REFLECT.push(im3);
   GRASS.im = im3;
-  M.blades = new THREE11.MeshStandardMaterial({ vertexColors: true, side: THREE11.DoubleSide, roughness: 0.8, metalness: 0, color: 7110472 });
-  M.blades.emissive = new THREE11.Color(527877);
+  M.blades = new THREE11.MeshStandardMaterial({ vertexColors: true, side: THREE11.DoubleSide, roughness: 0.72, metalness: 0, color: 7903562 });
+  // лёгкое «просвечивание» листа
+  M.blades.emissive = new THREE11.Color(724231);
   injectWind(M.blades, { amp: 0.14, stiff: 1.5, refH: 0.6, flutter: 0.05, trample: true, blast: 1.5, burn: true });
   TUFTS.R = Math.round(9 + 7 * Q.tex);
   const n2 = Q.tufts === false ? 1 : Math.round(Q.grass * 0.28);
@@ -5965,10 +6048,11 @@ function refreshTufts(force, cx, cz) {
     const x = (i + h1) * step, z = (j + h2) * step, dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
     if (d2 > R2 * R2) continue;
     const dens = grassDensity(x, z);
-    if (h3 > dens * (0.25 + (1 - d2 / (R2 * R2)) * 0.85)) continue;
+    // пореже и ниже: трава по щиколотку-колено, а не стеной
+    if (h3 > dens * (0.18 + (1 - d2 / (R2 * R2)) * 0.5)) continue;
     const e = edgeDist(x, z);
-    const tall = e > MAP.PLAY - 2 && e < MAP.FENCE ? 1.5 : lakeRho(x, z) < 1.5 ? 1.3 : 1;
-    const sc = lerp(0.7, 1.35, hash2(i + 3, j + 7)) * tall;
+    const tall = e > MAP.PLAY - 2 && e < MAP.FENCE ? 1.25 : lakeRho(x, z) < 1.5 ? 1.12 : 1;
+    const sc = lerp(0.65, 1.15, hash2(i + 3, j + 7)) * tall;
     _p.set(x, hFast(x, z) - 0.02, z);
     _q3.setFromAxisAngle(_up2, h1 * TAU);
     _s.set(sc, sc * lerp(0.75, 1.25, h2), sc);
@@ -6016,11 +6100,11 @@ function refreshGrass(force) {
     if (Q.tufts !== false && d2 < RN * RN && h1 < 0.55) continue;
     const fade = 1 - d2 / (R2 * R2);
     const dens = grassDensity(x, z);
-    if (h3 > dens * (0.35 + fade * 0.75)) continue;
+    if (h3 > dens * (0.22 + fade * 0.5)) continue;
     const y = hFast(x, z);
     const e = edgeDist(x, z);
-    const tall = e > MAP.PLAY - 2 && e < MAP.FENCE ? 1.6 : lakeRho(x, z) < 1.5 ? 1.35 : 1;
-    const sc = lerp(0.55, 1.25, hash2(i + 9, j + 13)) * tall;
+    const tall = e > MAP.PLAY - 2 && e < MAP.FENCE ? 1.3 : lakeRho(x, z) < 1.5 ? 1.12 : 1;
+    const sc = lerp(0.42, 0.9, hash2(i + 9, j + 13)) * tall;
     _p.set(x, y - 0.03, z);
     _q3.setFromAxisAngle(_up2, h1 * TAU);
     _s.set(sc, sc * lerp(0.7, 1.2, h2), sc);
@@ -7364,16 +7448,7 @@ function updateLamps(lampOn) {
   SPOT_C.length = 0;
   PT_C.length = 0;
   for (const L of LAMPS) if (L.rank < 1e12) (L.kind === "post" || L.kind === "flood" ? SPOT_C : PT_C).push(L);
-  const spotC = SPOT_C.sort(byRank);
-  SPOTS.forEach((S, i) => {
-    const L = spotC[i];
-    if (!L || L.rank > 140 * 140) {
-      S.intensity = 0;
-      S.position.set(0, -500, 0);
-      if (S.castShadow) S.shadow.needsUpdate = false;
-      return;
-    }
-    if (S.castShadow) S.shadow.needsUpdate = true;
+  assignSlots(SPOTS, SPOT_C.sort(byRank), 140, (S, L, k, fresh) => {
     S.position.copy(L.pos);
     const dir2 = L.dir || DOWN;
     S.target.position.copy(L.pos).addScaledVector(dir2, 5);
@@ -7382,21 +7457,63 @@ function updateLamps(lampOn) {
     S.distance = L.range;
     S.angle = L.kind === "flood" ? 0.62 : 1.08;
     S.penumbra = L.kind === "flood" ? 0.45 : 0.7;
-    const d = Math.sqrt(L.rank) * (L.kind === "flood" ? 1.6 : 1);
-    S.intensity = L.power * L.level * clamp(1.3 - d / 120, 0, 1);
-  });
-  const ptC = PT_C.sort(byRank);
-  POINTS.forEach((P2, i) => {
-    const L = ptC[i];
-    if (!L || L.rank > 90 * 90) {
-      P2.intensity = 0;
-      return;
+    const d = Math.sqrt(L.pos.distanceToSquared(cp)) * (L.kind === "flood" ? 1.6 : 1);
+    S.intensity = L.power * L.level * clamp(1.3 - d / 120, 0, 1) * k;
+    // фонари неподвижны: карта теней перерисовывается, только если слот сменил фонарь или рядом что-то движется
+    if (S.castShadow) {
+      S.shadow.autoUpdate = false;
+      if (fresh || FRAME.n % 45 === S.id % 45 || BLAST.shake > 0.05 || movingNear(L.pos, L.range)) S.shadow.needsUpdate = true;
     }
+  });
+  assignSlots(POINTS, PT_C.sort(byRank), 90, (P2, L, k) => {
     P2.position.copy(L.pos);
     P2.color.copy(L.color);
     P2.distance = L.range;
-    P2.intensity = L.power * L.level;
+    P2.intensity = L.power * L.level * k;
   });
+}
+// слоты реальных источников света раздаются ближайшим фонарям; смена идёт плавно:
+// уходящий фонарь гаснет за ~0.4 с и только потом освобождает слот
+function assignSlots(slots, cand, maxD, apply) {
+  const dt = FRAME.dt, want = /* @__PURE__ */ new Set();
+  for (const L of cand) {
+    if (want.size >= slots.length || L.rank > maxD * maxD) break;
+    want.add(L);
+  }
+  for (const S of slots) {
+    const L = S.userData.lamp;
+    if (!L) continue;
+    const target = want.has(L) && L.rank < maxD * maxD ? 1 : 0;
+    S.userData.k = clamp(S.userData.k + (target ? dt * 2.5 : -dt * 2.5), 0, 1);
+    if (!target && S.userData.k <= 0) S.userData.lamp = null;
+    else want.delete(L);
+  }
+  for (const L of want) {
+    const S = slots.find((q) => !q.userData.lamp);
+    if (!S) break;
+    S.userData.lamp = L;
+    S.userData.k = 0;
+    S.userData.fresh = true;
+  }
+  for (const S of slots) {
+    const L = S.userData.lamp;
+    if (!L) {
+      S.intensity = 0;
+      S.position.set(0, -500, 0);
+      if (S.castShadow) {
+        S.shadow.autoUpdate = false;
+        S.shadow.needsUpdate = false;
+      }
+      continue;
+    }
+    apply(S, L, S.userData.k, !!S.userData.fresh);
+    S.userData.fresh = false;
+  }
+}
+function movingNear(p, r) {
+  const r2 = r * r;
+  for (const b of PHYS.bodies) if (b.body && b.pos.distanceToSquared(p) < r2 && b.body.isActive()) return true;
+  return PL.mode === "walk" && PL.pos.distanceToSquared(p) < r2 && PL.vel.lengthSq() > 0.01;
 }
 var lampStats = () => ({ lamps: LAMPS.length, working: LAMPS.filter((l) => l.on).length, posts: POSTS.length });
 
@@ -7461,6 +7578,7 @@ var BB_FS = (
     #include <fog_fragment>
   }`
 );
+var _cc = [0, 0, 0];
 var Billboards = class {
   constructor(map, additive, o = {}) {
     const POOL = this.max = Q.pool;
@@ -7556,7 +7674,16 @@ var Billboards = class {
         const hh = (p.y - p.gy) / (size * 0.5);
         a *= hh < 1 ? Math.max(0.15, hh) : 1;
       }
-      const c = p.col, ci = n2 * 4;
+      let c = p.col;
+      const ci = n2 * 4;
+      if (p.col2) {
+        // дым светлеет и сереет по мере подъёма и остывания
+        const u = Math.min(1, t * (p.shift ?? 1.4)), c2 = p.col2;
+        _cc[0] = c[0] + (c2[0] - c[0]) * u;
+        _cc[1] = c[1] + (c2[1] - c[1]) * u;
+        _cc[2] = c[2] + (c2[2] - c[2]) * u;
+        c = _cc;
+      }
       this.P[ci] = p.x;
       this.P[ci + 1] = p.y;
       this.P[ci + 2] = p.z;
@@ -7775,10 +7902,12 @@ function updateParticles(dt, sky2) {
   for (const m of mist) {
     const u = m.material.uniforms;
     u.uT.value = t;
-    u.uO.value = 0.02 + fogAmt * 0.42;
-    u.uC.value.copy(sky2.fogColor).lerp(new THREE15.Color(0.7, 0.72, 0.74), 0.35 * (1 - sky2.night));
+    u.uO.value = 0.02 + fogAmt * 0.3;
+    // дымка над водой берёт цвет тумана (тёплая на рассвете, синяя ночью), лишь немного светлее
+    u.uC.value.copy(sky2.fogColor).multiplyScalar(1.12).lerp(_mistW, 0.12 * (1 - sky2.night));
   }
 }
+var _mistW = new THREE15.Color(0.72, 0.73, 0.75);
 var smoothstepF = (a, b, x) => {
   const t = clamp((x - a) / (b - a), 0, 1);
   return t * t * (3 - 2 * t);
@@ -7884,6 +8013,58 @@ function initAudio() {
   fireFilter.connect(fireGain);
   fireGain.connect(AUDIO.master);
   fire.start();
+  setupReverb(ctx);
+}
+// реверберация по зонам: одиночные звуки идут через шину sfx → сухой сигнал + свёртка с синтезированным откликом зоны.
+// Два конволвера по очереди: новый отклик грузится в неактивный, затем плавный кроссфейд
+var REVERB = { zone: "", conv: [], wet: [], cur: 0, irs: {}, t: 0, lastSwitch: -9 };
+var ZONES = {
+  forest: { dur: 2.2, decay: 2.8, bright: 0.3, wet: 0.32 },
+  house: { dur: 0.7, decay: 8, bright: 0.75, wet: 0.5, echoes: [[7e-3, 0.5], [0.013, 0.4], [0.021, 0.25]] },
+  trench: { dur: 0.5, decay: 10, bright: 0.5, wet: 0.34, echoes: [[0.01, 0.55], [0.022, 0.3]] },
+  lake: { dur: 3.4, decay: 1.5, bright: 0.45, wet: 0.36, echoes: [[0.42, 0.4], [0.9, 0.24], [1.55, 0.12]] },
+  open: { dur: 1.3, decay: 4.2, bright: 0.4, wet: 0.16 }
+};
+function makeIR(ctx, Z) {
+  const sr2 = ctx.sampleRate, n2 = Math.round(sr2 * Z.dur), buf = ctx.createBuffer(2, n2, sr2);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < n2; i++) {
+      const t = i / sr2;
+      lp += (Math.random() * 2 - 1 - lp) * (Z.bright * (1 - t / Z.dur * 0.7));
+      d[i] = lp * Math.exp(-t * Z.decay);
+    }
+    for (const [et, eg] of Z.echoes || []) {
+      const i0 = Math.round((et + ch * 3e-3) * sr2);
+      for (let k = 0; k < sr2 * 0.04 && i0 + k < n2; k++) d[i0 + k] += (Math.random() * 2 - 1) * eg * Math.exp(-k / (sr2 * 0.012));
+    }
+  }
+  return buf;
+}
+function setupReverb(ctx) {
+  AUDIO.sfx = ctx.createGain();
+  AUDIO.sfx.connect(AUDIO.master);
+  for (let i = 0; i < 2; i++) {
+    const c = ctx.createConvolver(), g = ctx.createGain();
+    g.gain.value = 0;
+    AUDIO.sfx.connect(c);
+    c.connect(g);
+    g.connect(AUDIO.master);
+    REVERB.conv.push(c);
+    REVERB.wet.push(g);
+  }
+}
+function setReverbZone(z) {
+  const ctx = AUDIO.ctx;
+  if (!ctx || !REVERB.conv.length || z === REVERB.zone || ctx.currentTime - REVERB.lastSwitch < 1.2) return;
+  REVERB.zone = z;
+  REVERB.lastSwitch = ctx.currentTime;
+  const Z = ZONES[z], next = 1 - REVERB.cur, t = ctx.currentTime;
+  REVERB.conv[next].buffer = REVERB.irs[z] ??= makeIR(ctx, Z);
+  REVERB.wet[REVERB.cur].gain.setTargetAtTime(0, t, 0.25);
+  REVERB.wet[next].gain.setTargetAtTime(Z.wet, t, 0.25);
+  REVERB.cur = next;
 }
 function burst(t, { type = "bandpass", f = 1e3, f1 = null, q = 1, vol = 0.3, a = 2e-3, dec = 0.3, x = 0, len = 1 }) {
   const ctx = AUDIO.ctx;
@@ -7900,7 +8081,7 @@ function burst(t, { type = "bandpass", f = 1e3, f1 = null, q = 1, vol = 0.3, a =
   src.connect(fl);
   fl.connect(g);
   g.connect(p);
-  p.connect(AUDIO.master);
+  p.connect(AUDIO.sfx || AUDIO.master);
   src.start(t, Math.random() * 3);
   src.stop(t + a + dec + len * 0.1 + 0.05);
 }
@@ -7917,7 +8098,7 @@ function glassSound(dist, x = 0) {
     const p = pan(ctx, x);
     o.connect(g);
     g.connect(p);
-    p.connect(AUDIO.master);
+    p.connect(AUDIO.sfx || AUDIO.master);
     o.start(t0);
     o.stop(t0 + 0.3);
   }
@@ -7951,7 +8132,7 @@ function whistleSound(dur = 0.9) {
   g.gain.exponentialRampToValueAtTime(0.05, t + dur * 0.7);
   g.gain.exponentialRampToValueAtTime(1e-4, t + dur);
   o.connect(g);
-  g.connect(AUDIO.master);
+  g.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + dur + 0.05);
 }
@@ -8005,7 +8186,7 @@ function pan(ctx, x) {
 function bird(ctx, t, x) {
   const n2 = 2 + Math.floor(Math.random() * 4), base2 = 2600 + Math.random() * 1800;
   const p = pan(ctx, x);
-  p.connect(AUDIO.master);
+  p.connect(AUDIO.sfx || AUDIO.master);
   for (let i = 0; i < n2; i++) {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = "sine";
@@ -8021,7 +8202,7 @@ function bird(ctx, t, x) {
 }
 function owl(ctx, t) {
   const p = pan(ctx, Math.random() * 2 - 1);
-  p.connect(AUDIO.master);
+  p.connect(AUDIO.sfx || AUDIO.master);
   for (const [dt, f, dur] of [[0, 420, 0.35], [0.55, 400, 0.18], [0.8, 410, 0.6]]) {
     const o = ctx.createOscillator(), g = ctx.createGain();
     o.type = "sine";
@@ -8047,21 +8228,37 @@ function crickets(ctx, t, amt) {
     }
     o.connect(g);
     g.connect(p);
-    p.connect(AUDIO.master);
+    p.connect(AUDIO.sfx || AUDIO.master);
     o.start(t0);
     o.stop(t0 + 0.6);
   }
 }
-function boom(dist, size = 1, x = 0) {
+function boom(dist, size = 1, x = 0, occl = 0, lake = false) {
   const ctx = AUDIO.ctx;
   if (!ctx || !AUDIO.on) return;
   const t = ctx.currentTime + dist / 343;
-  const vol = clamp(size * 1.6 / (1 + dist / 25), 0.02, 1.4);
+  // за препятствием (стена, бруствер, холм) — глуше и тише
+  const vol = clamp(size * 1.6 / (1 + dist / 25), 0.02, 1.4) * (1 - occl * 0.45);
   const src = ctx.createBufferSource();
   src.buffer = noiseBuf;
   const f = ctx.createBiquadFilter();
   f.type = "lowpass";
-  f.frequency.setValueAtTime(lerp(5e3, 700, clamp(dist / 250, 0, 1)), t);
+  f.frequency.setValueAtTime(lerp(5e3, 700, clamp(dist / 250, 0, 1)) * (1 - occl * 0.65), t);
+  if (lake) {
+    // эхо над озером: отражение от дальнего берега, глухое и запаздывающее
+    for (const [dl, k] of [[0.55 + dist / 900, 0.32], [1.25 + dist / 700, 0.16]]) {
+      const e = ctx.createBufferSource(), ef = ctx.createBiquadFilter(), eg = ctx.createGain();
+      e.buffer = noiseBuf;
+      ef.type = "lowpass";
+      ef.frequency.value = 650;
+      env(eg, t + dl, 0.03, vol * k, 1.6);
+      e.connect(ef);
+      ef.connect(eg);
+      eg.connect(pan(ctx, -x * 0.6)).connect(AUDIO.sfx || AUDIO.master);
+      e.start(t + dl, Math.random() * 2);
+      e.stop(t + dl + 2.2);
+    }
+  }
   f.frequency.exponentialRampToValueAtTime(120, t + 1.8);
   const g = ctx.createGain();
   env(g, t, 5e-3, vol, 1.6 + size * 0.6);
@@ -8069,7 +8266,7 @@ function boom(dist, size = 1, x = 0) {
   src.connect(f);
   f.connect(g);
   g.connect(p);
-  p.connect(AUDIO.master);
+  p.connect(AUDIO.sfx || AUDIO.master);
   src.start(t, Math.random() * 2);
   src.stop(t + 3);
   const o = ctx.createOscillator(), og = ctx.createGain();
@@ -8078,7 +8275,7 @@ function boom(dist, size = 1, x = 0) {
   o.frequency.exponentialRampToValueAtTime(28, t + 0.6);
   env(og, t, 4e-3, vol * 0.9, 0.7);
   o.connect(og);
-  og.connect(AUDIO.master);
+  og.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 1);
 }
@@ -8091,7 +8288,7 @@ function click() {
   o.frequency.exponentialRampToValueAtTime(400, t + 0.03);
   env(g, t, 1e-3, 0.2, 0.05);
   o.connect(g);
-  g.connect(AUDIO.master);
+  g.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 0.1);
 }
@@ -8105,7 +8302,7 @@ function tinnitus(k) {
   g.gain.linearRampToValueAtTime(0.05 * k, t + 0.1);
   g.gain.exponentialRampToValueAtTime(1e-4, t + 4 * k);
   o.connect(g);
-  g.connect(AUDIO.master);
+  g.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 4.5);
   AUDIO.master.gain.setValueAtTime(0.25, t);
@@ -8163,7 +8360,7 @@ function caw(ctx, t, v, x) {
   o.connect(f);
   f.connect(g);
   g.connect(p);
-  p.connect(AUDIO.master);
+  p.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 0.35);
   burst(t, { type: "highpass", f: 2500, vol: v * 0.25, a: 0.01, dec: 0.22, x });
@@ -8185,7 +8382,7 @@ function wireSnap(dist) {
   o.frequency.exponentialRampToValueAtTime(700, t + 0.5);
   env(g, t, 2e-3, v * 0.3, 0.55);
   o.connect(g);
-  g.connect(AUDIO.master);
+  g.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 0.6);
 }
@@ -8199,7 +8396,7 @@ function sparkSound(dist, big = 1) {
   o.frequency.exponentialRampToValueAtTime(30, t + 0.8);
   env(g, t, 0.01, v * 0.25, 0.8);
   o.connect(g);
-  g.connect(AUDIO.master);
+  g.connect(AUDIO.sfx || AUDIO.master);
   o.start(t);
   o.stop(t + 1);
 }
@@ -9096,9 +9293,10 @@ function tick(st) {
   for (const k of active) {
     if (state[k] !== 1) continue;
     const f = fuel[k];
-    heat[k] = Math.min(Math.min(1, 0.35 + f), heat[k] + st * 0.9);
+    // дождь гасит: нагрев слабеет, остывание сильнее нагрева уже при умеренном дожде
+    heat[k] = Math.min(Math.min(1, 0.35 + f), heat[k] + st * 0.9 * (1 - rain * 0.85));
     fuel[k] = f - st * (0.045 + heat[k] * 0.1);
-    heat[k] -= st * (rain * 0.9 + wet * 0.12);
+    heat[k] -= st * (rain * 1.5 + wet * 0.25);
     const d = k * 4;
     burnData[d + 1] = Math.max(0, heat[k]) * 255;
     burnData[d] = Math.max(burnData[d], Math.min(255, (1 - fuel[k] / (fuel0[k] + 1e-3)) * 240));
@@ -9118,7 +9316,7 @@ function tick(st) {
       if (state[n2] !== 0 || fuel[n2] < 0.12) continue;
       const dot = (dx * wx + dz * wz) / (w0 === 1 ? 1 : 1.414);
       const w = Math.max(0.08, 1 + dot * (0.8 + ws * 2.2));
-      const p = 0.13 * heat[k] * fuel[n2] * fuel[n2] * w * w0 * (1 - wet * 0.95) * st;
+      const p = 0.13 * heat[k] * fuel[n2] * fuel[n2] * w * w0 * (1 - wet * 0.95) * (1 - rain) * st;
       if (Math.random() < p && lightCell(n2, 0.2)) next.push(n2);
     }
   }
@@ -9148,12 +9346,13 @@ function updateFire(dt) {
     if (Math.random() > h * dt * 60 * 0.5) continue;
     const x = BURN.X0 + k % N + Math.random(), z = BURN.X0 + (k / N | 0) + Math.random(), y = hFast(x, z);
     FX.add.spawn({ flame: true, x, y: y + 0.1, z, vx: WIND.dir.x * 0.5 + sr(-0.2, 0.2), vy: sr(0.8, 2), vz: WIND.dir.y * 0.5 + sr(-0.2, 0.2), size: sr(0.35, 0.8) * (0.6 + h), grow: -0.3, life: sr(0.35, 0.8), col: [1.7, 0.85, 0.35], a: 0.9, cool: 0.45, windK: 0.6 });
-    if (Math.random() < 0.18) FX.alpha.spawn({ x, y: y + 0.8, z, vx: 0, vy: sr(0.8, 1.6), vz: 0, size: sr(0.6, 1.2), grow: 0.9, life: sr(3, 6), col: [0.2, 0.19, 0.18], a: 0.3, fadeIn: 0.4, windK: 1.6, drag: 0.3 });
+    // трава дымит жёлто-бурым, дым быстро светлеет и стелется по ветру
+    if (Math.random() < 0.3) FX.alpha.spawn({ x, y: y + 0.6, z, vx: 0, vy: sr(0.8, 1.8), vz: 0, size: sr(0.8, 1.5), grow: 1.3, life: sr(4, 8), col: [0.3, 0.26, 0.19], col2: [0.58, 0.57, 0.55], a: 0.38, fadeIn: 0.4, windK: 2.2, drag: 0.3, glow: 0.12 });
     if (Math.random() < 0.05) FX.add.spawn({ x, y: y + 0.4, z, vx: sr(-0.5, 0.5), vy: sr(1.5, 3.5), vz: sr(-0.5, 0.5), size: 0.05, life: sr(1, 2), col: [2.6, 1.2, 0.4], a: 1, grav: 1.2, windK: 0.8, drag: 0.4 });
   }
   for (let i = FIRE.trees.length - 1; i >= 0; i--) {
     const f = FIRE.trees[i];
-    f.age += dt;
+    f.age += dt * (1 + WEATHER.rain * 5);
     if (f.age > f.life) {
       FIRE.trees.splice(i, 1);
       continue;
@@ -9165,7 +9364,7 @@ function updateFire(dt) {
       const a = srnd() * TAU, r = Math.sqrt(srnd()) * f.r, y = lerp(f.y0, f.y1, srnd());
       FX.add.spawn({ flame: true, x: f.x + Math.cos(a) * r, y, z: f.z + Math.sin(a) * r, vx: WIND.dir.x, vy: sr(1.5, 3), vz: WIND.dir.y, size: sr(0.6, 1.4), grow: -0.2, life: sr(0.4, 0.9), col: [1.8, 0.8, 0.3], a: 0.9, cool: 0.4, windK: 0.8 });
     }
-    if (Math.random() < k * 0.35) FX.alpha.spawn({ x: f.x, y: f.y1, z: f.z, vx: 0, vy: sr(1, 2), vz: 0, size: sr(1.4, 2.4), grow: 1.4, life: sr(4, 8), col: [0.16, 0.15, 0.14], a: 0.4, fadeIn: 0.5, windK: 2, drag: 0.3 });
+    if (Math.random() < k * 0.5) FX.alpha.spawn({ x: f.x, y: f.y1, z: f.z, vx: 0, vy: sr(1.5, 2.8), vz: 0, size: sr(1.6, 2.8), grow: 1.8, life: sr(6, 11), col: [0.07, 0.065, 0.06], col2: [0.36, 0.35, 0.34], a: 0.5, fadeIn: 0.5, windK: 2.4, drag: 0.25, glow: 0.4 });
     if (Math.random() < k * dt * 0.8) ignite(f.x + sr(-f.r, f.r), f.z + sr(-f.r, f.r), 1, 0.7);
   }
   for (let i = FIRE.brands.length - 1; i >= 0; i--) {
@@ -9639,7 +9838,7 @@ function updateWaves(dt) {
   }
 }
 function onBlast(x, gy, z, size, water, opt = {}) {
-  if (!water) {
+  if (!water && !opt.deck) {
     const r = 0.85 + 0.75 * size;
     deformCrater(x, z, r);
     scorch(x, z, Math.ceil(r * 1.7), 1);
@@ -10041,7 +10240,7 @@ function bridge(b, R2) {
   const rot = Math.atan2(ux, uz), deck = MAP.WATER_Y + 0.85, n2 = Math.ceil(L / 2.5), step = L / n2;
   const g0 = hFast(ax, az) + 0.12, g1 = Math.max(hFast(bx, bz) + 0.08, deck - 0.2);
   const dy = (i) => i === 0 ? g0 : i === n2 ? Math.min(deck, g1) : deck;
-  beginStruct({ kind: "bridge", name: "мост", x: (ax + bx) / 2, z: (az + bz) / 2, rot, w: 1.8, d: L, h: 1.2, fy: deck, fuel: 0.6 });
+  beginStruct({ kind: "bridge", name: "мост", x: (ax + bx) / 2, z: (az + bz) / 2, rot, w: 1.8, d: L, h: 1.2, fy: deck, fuel: 0.9, thin: 2.6 });
   noPanel();
   for (let i = 1; i < n2; i++) {
     const px = ax + ux * step * i, pz = az + uz * step * i, bed = terrainH(px, pz);
@@ -10053,7 +10252,7 @@ function bridge(b, R2) {
     box(M.planksDark, px, deck - 0.2, pz, 1.8, 0.14, 0.18, { rot, tile: 1 });
   }
   for (let i = 0; i < n2; i++) {
-    const pn = panel("roof", { hp: 0.7, mode: "rigid", density: 500, float: 1.8 });
+    const pn = panel("roof", { hp: 0.4, mode: "rigid", density: 500, float: 1.8 });
     const s0 = step * i, s1 = step * (i + 1), y0 = dy(i), y1 = dy(i + 1);
     const cx = ax + ux * (s0 + s1) / 2, cz = az + uz * (s0 + s1) / 2, pitch = Math.atan2(y1 - y0, step);
     for (const e of [-0.5, 0.5]) box(M.planksDark, cx + nx * e, (y0 + y1) / 2 - 0.12, cz + nz * e, 0.14, 0.14, step + 0.1, { rot, rx: -pitch, tile: 1 });
@@ -11736,27 +11935,54 @@ function burnPlayer(dt, heat2) {
     die("СГОРЕЛ В ПОЖАРЕ", "fire");
   }
 }
+var _oa = new THREE25.Vector3();
+var _ob = new THREE25.Vector3();
+// прямая видимость от взрыва: рельеф (бруствер, окоп) и стены/укрытия гасят ударную волну и осколки
+function losClear(ax, ay, az, bx, by, bz) {
+  const L = Math.hypot(bx - ax, by - ay, bz - az), n2 = Math.max(2, Math.ceil(L / 0.3));
+  for (let i = 1; i < n2; i++) {
+    const t = i / n2, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
+    if (y < hFast(x, z) - 0.04) return false;
+  }
+  if (!PHYS.ready || L < 0.4) return true;
+  const h = rayCast(_oa.set(ax, ay, az), _ob.set(bx, by, bz));
+  if (!h || h.dist > L - 0.25) return true;
+  if (h.idx === -1) return false;
+  if (h.idx < 0 || h.idx >= BODY_IDX0) return true;
+  const c = COLLIDERS[h.idx];
+  return !c || c.dead || !!c.tree || !!c.wire || !!c.pane;
+}
+function blastExposure(x, y, z, drone) {
+  const px = PL.pos.x, py = PL.pos.y, pz = PL.pos.z, oy = y + 0.35;
+  if (drone) return losClear(x, oy, z, px, py, pz) ? 1 : 0.15;
+  let v = 0;
+  for (const hy of [0.25, 0.95, 1.55]) v += losClear(x, oy, z, px, py + hy * lerp(1, 0.62, PL.crouch), pz) ? 1 : 0;
+  return v / 3;
+}
 function blastKnock(x, y, z, size) {
   if (PL.dead > 0 || PL.cine) return;
   const dx = PL.pos.x - x, dy = PL.pos.y + 0.9 - y, dz = PL.pos.z - z, d = Math.hypot(dx, dy, dz);
+  if (d > 14 * size) return;
+  const ex = blastExposure(x, y, z, PL.mode === "drone");
+  PL.lastExposure = ex;
   if (PL.mode === "walk") {
-    if (d < 1.9 * size) {
+    if (d < 1.9 * size * (0.3 + 0.7 * ex)) {
       die("ПОГИБ ОТ РАЗРЫВА", "blast");
       return;
     }
     if (d < 12 * size) {
-      const k = 9 * size / (1 + d * 0.9);
+      const k = 9 * size / (1 + d * 0.9) * (0.12 + 0.88 * ex);
       PL.vel.x += dx / d * k;
       PL.vel.z += dz / d * k;
       PL.vel.y += k * 0.35;
       PL.onGround = false;
     }
   } else if (d < 9 * size) {
-    const k = 14 * size / (1 + d);
+    const k = 14 * size / (1 + d) * (0.2 + 0.8 * ex);
     PL.vel.x += dx / d * k;
     PL.vel.y += dy / d * k;
     PL.vel.z += dz / d * k;
-    if (d < 1.6 * size) die("ДРОН УНИЧТОЖЕН ВЗРЫВОМ", "blast");
+    if (d < 1.6 * size * (0.3 + 0.7 * ex)) die("ДРОН УНИЧТОЖЕН ВЗРЫВОМ", "blast");
   }
 }
 var BOMBS = [];
@@ -11790,7 +12016,9 @@ function updateBombs(dt) {
     b.p.addScaledVector(b.v, dt);
     FX.alpha.spawn({ x: b.p.x, y: b.p.y, z: b.p.z, vx: 0, vy: 0, vz: 0, size: 0.08, grow: 0.3, life: 0.4, col: [0.8, 0.8, 0.8], a: 0.25 });
     const water = lakeRho(b.p.x, b.p.z) < 0.98;
-    const g = water ? Math.max(MAP.WATER_Y, terrainH(b.p.x, b.p.z)) : Math.max(hFast(b.p.x, b.p.z), supportTop(b.p.x, b.p.z, 0.05, b.p.y, 0.2));
+    // над водой граната тоже может упасть на мост/мостки, а не пролететь сквозь настил
+    const deck = supportTop(b.p.x, b.p.z, 0.05, b.p.y, 0.2);
+    const g = water ? Math.max(MAP.WATER_Y, terrainH(b.p.x, b.p.z), deck) : Math.max(hFast(b.p.x, b.p.z), deck);
     if (b.p.y <= g + 0.05) {
       BOMBS.splice(i, 1);
       explode(b.p.x, g, b.p.z, "vog");
@@ -11800,9 +12028,10 @@ function updateBombs(dt) {
         if (m.mesh) m.mesh.visible = false;
         setTimeout(() => explode(m.x, terrainH(m.x, m.z), m.z, m.type), 120);
       }
-      const d = PL.pos.distanceTo(b.p);
-      if (PL.mode === "walk" && d < 4.5) die("ПОДРЫВ НА СОБСТВЕННОЙ ГРАНАТЕ", "self");
-      if (PL.mode === "drone" && d < 2.2) die("ДРОН УНИЧТОЖЕН ОСКОЛКАМИ", "self");
+      // осколки своей гранаты — только если нет укрытия между игроком и разрывом
+      const d = PL.pos.distanceTo(b.p), ex = d < 4.5 ? PL.lastExposure ?? 1 : 1;
+      if (PL.mode === "walk" && d < 4.5 * (0.2 + 0.8 * ex)) die("ПОДРЫВ НА СОБСТВЕННОЙ ГРАНАТЕ", "self");
+      if (PL.mode === "drone" && d < 2.2 * (0.2 + 0.8 * ex)) die("ДРОН УНИЧТОЖЕН ОСКОЛКАМИ", "self");
     }
   }
 }
@@ -12183,8 +12412,11 @@ function crater(x, z, r) {
 }
 function explode(x, y, z, kind = "pmn") {
   const size = kind === "tm" ? 2.2 : kind === "shell" ? 1.8 : kind === "ozm" ? 1.3 : kind === "vog" ? 0.8 : 1;
-  const water = lakeRho(x, z) < 0.98 && y < MAP.WATER_Y + 0.6;
-  const gy = water ? MAP.WATER_Y : terrainH(x, z);
+  const ground0 = terrainH(x, z);
+  // взрыв на настиле (мост, мостки, крыша): без воронки в грунте, осколки дерева вместо земли
+  const deck = y > Math.max(ground0, MAP.WATER_Y) + 0.3;
+  const water = !deck && lakeRho(x, z) < 0.98 && y < MAP.WATER_Y + 0.6;
+  const gy = water ? MAP.WATER_Y : deck ? y : ground0;
   BLAST.last = { x, y: gy, z, t: FRAME.t, size };
   for (const f of BLAST.hooks) f(x, gy, z, size);
   BLAST.flash.position.set(x, gy + 1.5, z);
@@ -12274,8 +12506,9 @@ function explode(x, y, z, kind = "pmn") {
       BLAST.chunks.push({ p: new THREE26.Vector3(x, gy + 0.2, z), v: new THREE26.Vector3(Math.cos(a) * Math.cos(e) * sp, Math.sin(e) * sp, Math.sin(a) * Math.cos(e) * sp), life: sr(2.5, 4.5), s: sr(0.6, 1.6), r: new THREE26.Euler(srnd() * 6, srnd() * 6, 0) });
     }
     if (BLAST.chunks.length > 220) BLAST.chunks.splice(0, BLAST.chunks.length - 220);
-    onBlast(x, gy, z, size, false);
-    crater(x, z, 1.4 * size);
+    onBlast(x, gy, z, size, false, { deck });
+    if (!deck) crater(x, z, 1.4 * size);
+    else splinters(x, gy + 0.2, z, new THREE26.Vector3(0, 1, 0), Math.round(8 * size), M.logEnd, 0.5);
   }
   blastKnock(x, gy, z, size);
   for (let i = 0; i < 14 * size; i++) {
@@ -12289,7 +12522,9 @@ function explode(x, y, z, kind = "pmn") {
       size: sr(1.4, 2.6) * size,
       grow: 1.1,
       life: sr(5, 9),
-      col: water ? [0.7, 0.72, 0.74] : [0.3, 0.28, 0.26],
+      col: water ? [0.7, 0.72, 0.74] : [0.13, 0.11, 0.09],
+      col2: water ? [0.8, 0.82, 0.84] : [0.44, 0.41, 0.37],
+      glow: water ? 0 : 0.5,
       a: 0.5,
       fadeIn: 0.25,
       windK: 1.5,
@@ -12304,7 +12539,8 @@ function explode(x, y, z, kind = "pmn") {
   BLAST.shake = Math.max(BLAST.shake, clamp(2.4 * size / (1 + d / 6), 0, 1.6));
   const right2 = new THREE26.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
   const panX = right2.dot(new THREE26.Vector3(x - camera.position.x, 0, z - camera.position.z).normalize());
-  boom(d, size, panX);
+  const cp0 = camera.position, occl = d > 1.5 && !losClear(x, gy + 0.6, z, cp0.x, cp0.y, cp0.z) ? 1 : 0;
+  boom(d, size, panX, occl, lakeRho(x, z) < 1.5 || lakeRho(cp0.x, cp0.z) < 1.4);
   if (d < 9) tinnitus(clamp(1 - d / 9, 0, 1));
   return d;
 }
@@ -12373,7 +12609,8 @@ function blastStructs(x, y, z, size) {
       if (p.dead || !p.box) continue;
       const d = p.box.distanceToPoint(_v4);
       if (d > R2) continue;
-      const dmg = size * 1.5 / Math.pow(0.6 + d, 1.45);
+      // граната выбивает кусок стены вплотную, снаряд/ТМ — несколько секций и крышу над ними
+      const dmg = size * 2.6 / Math.pow(0.5 + d, 1.5);
       if (p.mode === "sag") {
         sagPanel(p, dmg * 0.9, _v4);
         continue;
@@ -12772,8 +13009,10 @@ function updateBurning(dt) {
     const alive = s.panels.filter((p) => !p.dead && p.burnable && p.parts.length);
     if (step) {
       const rain = WEATHER.rain;
-      s.burn = clamp(s.burn + st * (0.035 * (1 - rain * 0.8) - rain * 0.03 * (s.burn < 0.5 ? 1 : 0.3)), 0, 1);
-      s.fuel -= st * s.burn * 9e-3;
+      // дождь: рост огня почти останавливается, а гашение сильнее — открытый огонь (мост, навес) гаснет быстрее дома
+      const open = s.kind === "bridge" || s.kind === "stand" || s.kind === "porch" ? 1.6 : 1;
+      s.burn = clamp(s.burn + st * (0.035 * (s.thin ?? 1) * (1 - rain * 0.9) - rain * open * (s.burn < 0.5 ? 0.07 : 0.035)), 0, 1);
+      s.fuel -= st * s.burn * 9e-3 * (s.thin ?? 1);
       s.burnT += st;
       if (s.fuel <= 0 || s.burn <= 0.01 || !alive.length) {
         if (s.burnT > 20 && WEATHER.rain < 0.5) {
@@ -12793,7 +13032,7 @@ function updateBurning(dt) {
       markCharDirty();
       for (const p of alive) {
         const k = p.kind === "roof" ? 1.6 : p.kind === "wall" ? 0.5 : 1;
-        p.hp -= st * s.burn * 0.012 * k * sr(0.3, 1.7) * (s.log ? 0.7 : 1);
+        p.hp -= st * s.burn * 0.012 * k * sr(0.3, 1.7) * (s.log ? 0.7 : 1) * (s.thin ?? 1);
         if (p.hp <= 0) {
           p.fireKill = true;
           kill(p, _v4.copy(p.center).add(new THREE27.Vector3(sr(-1, 1), 3, sr(-1, 1))), 0.6, 0);
@@ -12808,30 +13047,48 @@ function updateBurning(dt) {
     const d2 = (s.x - cp.x) ** 2 + (s.z - cp.z) ** 2;
     FIRE.structs.push({ x: s.center.x, z: s.center.z, y: s.fy + 1.2, p: s.burn * 8 });
     if (d2 > 170 * 170) continue;
-    const n2 = Math.round((2 + s.burn * 10) * (0.5 + Q.tex * 0.5));
+    // языки огня: вырываются у верхних кромок стен, из проёмов и с кровли, а не равномерно по плоскости стены
+    const n2 = Math.round((2 + s.burn * 12) * (0.5 + Q.tex * 0.5) * Math.min(2, dt * 60));
+    const wetK = 1 - WEATHER.rain * 0.6;
     for (let k = 0; k < n2; k++) {
-      if (!alive.length || Math.random() > s.burn) continue;
+      if (!alive.length || Math.random() > s.burn * wetK) continue;
       const p = alive[Math.random() * alive.length | 0], b = p.box;
-      const x = sr(b.min.x, b.max.x), y = sr(b.min.y, b.max.y), z = sr(b.min.z, b.max.z);
-      FX.add.spawn({ flame: true, x, y, z, vx: sr(-0.3, 0.3), vy: sr(1.5, 3.5), vz: sr(-0.3, 0.3), size: sr(0.5, 1.2) * (0.6 + s.burn), grow: -0.3, life: sr(0.4, 0.9), col: [1.8, 0.85, 0.32], a: 0.9, cool: 0.4, windK: 0.9 });
+      const top = p.kind === "roof" || Math.random() < 0.6;
+      const x = sr(b.min.x, b.max.x), y = top ? lerp(b.min.y, b.max.y, sr(0.7, 1)) : sr(b.min.y, b.max.y), z = sr(b.min.z, b.max.z);
+      const hot = Math.random();
+      const col = hot < 0.2 ? [2.6, 1.55, 0.6] : hot < 0.75 ? [1.9, 0.82, 0.28] : [1.3, 0.42, 0.12];
+      const big = top ? sr(0.8, 1.7) : sr(0.4, 0.9);
+      FX.add.spawn({ flame: true, x, y, z, vx: sr(-0.25, 0.25) + WIND.dir.x * 0.4, vy: sr(2, 4.2), vz: sr(-0.25, 0.25) + WIND.dir.y * 0.4, size: big * (0.55 + s.burn * 0.8), grow: -0.45, life: sr(0.45, 1.05), col, a: 0.95, cool: 0.35, windK: 1.1 });
     }
-    if (Math.random() < dt * (3 + s.burn * 10)) FX.alpha.spawn({
-      x: s.center.x + sr(-1, 1),
-      y: s.fy + (s.h ?? 2.5) + sr(0, 1.5),
-      z: s.center.z + sr(-1, 1),
-      vx: 0,
-      vy: sr(1.2, 2.5),
-      vz: 0,
-      size: sr(1.5, 3) * (0.6 + s.burn),
-      grow: 1.6,
-      life: sr(6, 12),
-      col: [0.1, 0.095, 0.09].map((v) => v * (1.4 - s.burn * 0.6)),
-      a: 0.45 + s.burn * 0.15,
-      fadeIn: 0.6,
-      windK: 2.2,
-      drag: 0.25,
-      glow: 0.35 * s.burn
-    });
+    // столб дыма: у основания густой, почти чёрный, подсвеченный огнём; выше — серо-бурый и светлее
+    const smokeRate = (4 + s.burn * 18) * (0.6 + Q.fx * 0.4);
+    let sk = dt * smokeRate;
+    while (sk > 0) {
+      if (Math.random() < sk) {
+        const steam = WEATHER.rain > 0.3 && Math.random() < WEATHER.rain * 0.6;
+        const dark = 0.05 + (1 - s.burn) * 0.08;
+        FX.alpha.spawn({
+          x: s.center.x + sr(-1.2, 1.2) * ((s.w ?? 3) / 3),
+          y: s.fy + (s.h ?? 2.5) * sr(0.8, 1.1) + sr(0, 1),
+          z: s.center.z + sr(-1.2, 1.2) * ((s.d ?? 3) / 3),
+          vx: sr(-0.3, 0.3),
+          vy: sr(2, 3.6) * (0.6 + s.burn * 0.6),
+          vz: sr(-0.3, 0.3),
+          size: sr(1.6, 3.2) * (0.6 + s.burn * 0.7),
+          grow: sr(1.8, 2.8),
+          life: sr(8, 16),
+          col: steam ? [0.62, 0.62, 0.63] : [dark * 1.1, dark, dark * 0.9],
+          col2: steam ? [0.78, 0.78, 0.8] : [0.34, 0.32, 0.3],
+          shift: 1.1,
+          a: steam ? 0.35 : 0.55 + s.burn * 0.2,
+          fadeIn: 0.5,
+          windK: 2.6,
+          drag: 0.22,
+          glow: steam ? 0 : 0.55 * s.burn
+        });
+      }
+      sk -= 1;
+    }
     const roofGone = s.panels.some((p) => p.kind === "roof" && p.dead);
     if (roofGone && s.burn > 0.35) {
       for (let k = 0; k < 2; k++) if (Math.random() < s.burn) {
@@ -13749,7 +14006,7 @@ function house(o) {
     bySide[name] = [];
     const pieces = [];
     for (const [u0, u1, y0, y1] of wallPieces(S22.len, h, openings[name])) {
-      const nu = Math.max(1, Math.round((u1 - u0) / 1.3));
+      const nu = Math.max(1, Math.round((u1 - u0) / 1));
       let ys = [y0, y1];
       if (y1 - y0 > 1.5) {
         let m = (y0 + y1) / 2;
@@ -13896,7 +14153,11 @@ function house(o) {
     for (const s2 of [-1, 1]) {
       if (R2() < damage * 0.4) continue;
       const sag = R2() < damage * 0.3 ? R2.range(0.05, 0.14) : 0;
-      panel("roof", { hp: 0.6, sup: { list: walls, frac: R2.range(0.4, 0.62) }, density: 1400, float: 0, burnable: o.roof === "tar" });
+      // лист кровли держат ближайшие к нему куски стены (и фронтон у торца): выбило стену — просел этот участок крыши
+      const side2 = bySide[s2 > 0 ? "front" : "back"].filter((q) => Math.abs((q.u0 + q.u1) / 2 - w / 2 - lx) < 1.7);
+      const gable = Math.abs(lx) > w / 2 - 1.2 ? bySide[lx < 0 ? "left" : "right"].filter((q) => s2 * ((q.u0 + q.u1) / 2 - (d - 2 * WALL_T) / 2) < 0.8) : [];
+      const near = side2.concat(gable);
+      panel("roof", { hp: 0.6, sup: near.length ? { list: near, frac: R2.range(0.5, 0.7) } : { list: walls, frac: R2.range(0.4, 0.62) }, density: 1400, float: 0, burnable: o.roof === "tar" });
       B(roofMat, lx, top + hr - D2 / 2 * Math.tan(pitch) - sag, s2 * D2 / 2, pw - 0.02, 0.03, Ls, { rx: s2 * pitch + R2.range(-0.02, 0.02), tile: 1.2 });
     }
   }
@@ -14299,10 +14560,10 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 var Grade = {
-  uniforms: { tDiffuse: { value: null }, uFlash: { value: 0 }, uUnder: { value: 0 }, uNight: { value: 0 }, uSat: { value: 1.05 }, uVig: { value: 0.25 }, uT: { value: 0 }, uHit: { value: 0 }, uWarm: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uFlash: { value: 0 }, uUnder: { value: 0 }, uNight: { value: 0 }, uSat: { value: 1.05 }, uVig: { value: 0.25 }, uT: { value: 0 }, uHit: { value: 0 }, uWarm: { value: 0 }, uLift: { value: new THREE31.Vector3() }, uGain: { value: new THREE31.Vector3(1, 1, 1) }, uGamma: { value: new THREE31.Vector3(1, 1, 1) }, uCon: { value: 1 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uNight, uSat, uVig, uT, uHit, uWarm, uFlash, uUnder; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uNight, uSat, uVig, uT, uHit, uWarm, uFlash, uUnder; uniform vec3 uLift, uGain, uGamma; uniform float uCon; varying vec2 vUv;
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
@@ -14311,10 +14572,13 @@ var Grade = {
       vec4 c = texture2D(tDiffuse, uv);
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, uSat);
-      // ночное зрение: холоднее и беднее цветом, но тёплые огни остаются тёплыми
-      vec3 scot = vec3(l * 0.78, l * 0.92, l * 1.2);
-      float keep = smoothstep(0.25, 0.9, l);
-      c.rgb = mix(c.rgb, scot, uNight * 0.55 * (1.0 - keep));
+      // ночное зрение: лунный сине-бирюзовый сдвиг в тенях, без серой «плёнки»; тёплые огни остаются тёплыми
+      vec3 scot = vec3(l * 0.6, l * 0.86, l * 1.28);
+      float keep = smoothstep(0.2, 0.8, l);
+      c.rgb = mix(c.rgb, scot, uNight * 0.32 * (1.0 - keep));
+      // цветокоррекция по времени суток (lift / gamma / gain): тёплый рассвет, холодная ночь
+      c.rgb = pow(max(c.rgb * uGain + uLift * (1.0 - c.rgb), 0.0), uGamma);
+      c.rgb = max((c.rgb - 0.45) * uCon + 0.45, 0.0);
       // лёгкий «плёночный» тон: тени в зелень, света в тепло
       c.rgb += vec3(-0.004, 0.003, -0.002) * (1.0 - l) + vec3(0.012, 0.006, -0.01) * l * uWarm;
       vec2 d = vUv - 0.5;
@@ -14344,17 +14608,24 @@ function buildPost2() {
   bloom.enabled = Q.bloom;
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
-  grade = new ShaderPass(Grade);
-  composer.addPass(grade);
+  // SMAA до цветокоррекции: иначе сглаживание размывает зерно и виньетку
   smaa = new SMAAPass(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio());
   smaa.enabled = Q.smaa;
   composer.addPass(smaa);
+  grade = new ShaderPass(Grade);
+  composer.addPass(grade);
 }
 function updatePost(sky2, hit, flash2 = 0, under = 0) {
   grade.uniforms.uFlash.value = flash2;
   grade.uniforms.uUnder.value = under;
-  grade.uniforms.uNight.value = sky2.night;
-  grade.uniforms.uSat.value = lerp(1.06, 0.88, sky2.night);
+  grade.uniforms.uNight.value = sky2.deep ?? sky2.night;
+  // AgX приглушает насыщенность — поднимаем её; ночью цвет беднее, но не серый
+  const gd = sky2.golden ?? 0, nt = sky2.deep ?? sky2.night;
+  grade.uniforms.uSat.value = lerp(1.14, 0.97, nt) + gd * 0.08;
+  grade.uniforms.uGain.value.set(1 + gd * 0.05 - nt * 0.05, 1 - gd * 0.01 - nt * 0.01, 1 - gd * 0.06 + nt * 0.07);
+  grade.uniforms.uCon.value = lerp(1.08, 1.02, nt);
+  grade.uniforms.uLift.value.set(gd * 0.012, nt * 0.004, gd * 0.014 + nt * 0.016);
+  grade.uniforms.uGamma.value.set(1 - gd * 0.03, 1, 1 + gd * 0.04 - nt * 0.03);
   grade.uniforms.uVig.value = lerp(0.22, 0.42, sky2.night);
   grade.uniforms.uT.value = FRAME.t % 100;
   grade.uniforms.uHit.value = hit;
@@ -14865,8 +15136,8 @@ function aimPoint(maxD = 600) {
   const h = rayCast(_a2, _b2);
   if (h) return h.point.clone();
   for (let d = 1; d < maxD; d += 1) {
-    const p = _a2.clone().addScaledVector(_dir, d);
-    if (p.y < terrainH(p.x, p.z)) return p;
+    const x = _a2.x + _dir.x * d, y = _a2.y + _dir.y * d, z = _a2.z + _dir.z * d;
+    if (y < terrainH(x, z)) return new THREE34.Vector3(x, y, z);
   }
   return null;
 }
@@ -15580,6 +15851,9 @@ function finish() {
     },
     phys: PHYS,
     perf: PERF,
+    ammo: AMMO,
+    crates: CRATES,
+    pause: PAUSE,
     stats: () => ({
       calls: renderer.info.render.calls,
       tris: renderer.info.render.triangles,
@@ -15859,6 +16133,12 @@ function frame2(dt, render = true) {
   searchlight.angle = PL.mode === "drone" ? 0.34 : 0.5;
   setLoops(WEATHER.rain * (PL.agl < 60 ? 1 : 0.3), Math.min(1, FIRE.near / 60 + FIRE.trees.length * 0.15));
   updateAudio(dt, { night: SKY.night, wind: WIND.strength, agl: PL.agl, drone: PL.mode === "drone" && PL.dead <= 0, speed: PL.vel.length() });
+  REVERB.t -= dt;
+  if (REVERB.t <= 0 && AUDIO.ctx) {
+    REVERB.t = 0.5;
+    const cp2 = camera.position, agl2 = cp2.y - hFast(cp2.x, cp2.z);
+    setReverbZone(indoor() ? "house" : PL.mode === "walk" && trenchDist(cp2.x, cp2.z) < TW.cap && agl2 < 1.9 ? "trench" : lakeRho(cp2.x, cp2.z) < 1.2 ? "lake" : agl2 < 25 && forestFast(cp2.x, cp2.z) > 0.45 ? "forest" : "open");
+  }
   const camUnder = camera.position.y < MAP.WATER_Y - 0.02 && lakeRho(camera.position.x, camera.position.z) < 1;
   if (camUnder) {
     const l = 0.12 + 0.6 * (1 - SKY.night) * (1 - WEATHER.ov * 0.6);
@@ -15874,7 +16154,7 @@ function frame2(dt, render = true) {
   if (se > 1 && (FRAME.n % se === 0 || BLAST.shake > 0.05)) renderer.shadowMap.needsUpdate = true;
   composer.render();
   updateHud(dt);
-  const hint = $("#hint");
+  const hint = hudEls().hint ??= $("#hint");
   if (hint.textContent !== INTER.hint) {
     hint.textContent = INTER.hint;
     hint.classList.toggle("on", !!INTER.hint);
@@ -15884,21 +16164,36 @@ function adaptResolution(dt) {
   PERF.acc += dt;
   PERF.n++;
   PERF.t += dt;
+  // самый короткий кадр окна ≈ период обновления монитора (при vsync быстрее не бывает)
+  PERF.minDt = Math.min(PERF.minDt ?? 1, Math.max(dt, 1 / 240));
   if (PERF.t < 1.5) return;
   const ms = PERF.acc / PERF.n * 1e3;
   PERF.frameMs = ms;
   PERF.acc = PERF.n = PERF.t = 0;
-  PERF.load = Math.min(1, Math.max(0, (ms - 22) / 20));
+  const hz = 1 / PERF.minDt;
+  PERF.minDt = 1;
+  PERF.hz = PERF.hz ? lerp(PERF.hz, hz, 0.3) : hz;
+  // цель — частота монитора, но не выше 75 и не ниже 40 кадров; пороги с гистерезисом
+  const target = 1e3 / clamp(PERF.hz, 40, 75), slow = target * 1.3, fast = target * 0.82;
+  PERF.load = Math.min(1, Math.max(0, (ms - target * 1.2) / (target * 1.2)));
   if (!PERF.auto) return;
   let pr = PERF.pr;
-  if (ms > 36) {
-    if (pr > PERF.minPr) pr = Math.max(PERF.minPr, pr - 0.1);
-    else if (PERF.lvl < 3) setLevel(PERF.lvl + 1);
-  } else if (ms < 19) {
+  if (ms > slow) {
+    PERF.calm = 0;
+    if (++PERF.slowN >= 2 || ms > slow * 1.6) {
+      PERF.slowN = 0;
+      if (pr > PERF.minPr) pr = Math.max(PERF.minPr, pr - (ms > slow * 1.6 ? 0.15 : 0.08));
+      else if (PERF.lvl < 3) setLevel(PERF.lvl + 1);
+    }
+  } else if (ms < fast) {
+    PERF.slowN = 0;
     if (PERF.lvl > 0) {
-      if (++PERF.calm >= 3) setLevel(PERF.lvl - 1);
-    } else if (pr < PERF.maxPr) pr = Math.min(PERF.maxPr, pr + 0.05);
-  } else PERF.calm = 0;
+      if (++PERF.calm >= 4) setLevel(PERF.lvl - 1);
+    } else if (pr < PERF.maxPr && ++PERF.calm >= 2) {
+      PERF.calm = 0;
+      pr = Math.min(PERF.maxPr, pr + 0.05);
+    }
+  } else PERF.calm = PERF.slowN = 0;
   if (pr !== PERF.pr) {
     PERF.pr = pr;
     renderer.setPixelRatio(pr);
@@ -15909,6 +16204,7 @@ function adaptResolution(dt) {
 function setLevel(l) {
   PERF.lvl = l;
   PERF.calm = 0;
+  PERF.slowN = 0;
   PERF.shadowEvery = Math.max(Q.shadowEvery, [1, 2, 3, 4][l]);
   bloom.enabled = Q.bloom && l < 2;
   const cap = [1, 1, 0.7, 0.5][l];
