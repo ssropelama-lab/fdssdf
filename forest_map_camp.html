@@ -1056,7 +1056,7 @@ import * as THREE35 from "three";
 import * as THREE from "three";
 var PRESETS = {
   potato: {
-    name: "\u043C\u0438\u043D\u0438\u043C\u0430\u043B\u044C\u043D\u043E\u0435",
+    name: "минимальное",
     shadow: 512,
     grass: 4e3,
     grassR: 18,
@@ -1092,7 +1092,7 @@ var PRESETS = {
     groundNormals: false
   },
   low: {
-    name: "\u043D\u0438\u0437\u043A\u043E\u0435",
+    name: "низкое",
     shadow: 1024,
     grass: 9e3,
     grassR: 24,
@@ -1128,7 +1128,7 @@ var PRESETS = {
     groundNormals: true
   },
   medium: {
-    name: "\u0441\u0440\u0435\u0434\u043D\u0435\u0435",
+    name: "среднее",
     shadow: 2048,
     grass: 26e3,
     grassR: 34,
@@ -1164,7 +1164,7 @@ var PRESETS = {
     groundNormals: true
   },
   high: {
-    name: "\u0432\u044B\u0441\u043E\u043A\u043E\u0435",
+    name: "высокое",
     shadow: 4096,
     grass: 6e4,
     grassR: 44,
@@ -1546,7 +1546,7 @@ var MAP = {
   WORLD: 340,
   // визуальный лес до горизонта
   WATER_Y: -1.25,
-  NAME: "\u0422\u0418\u0425\u0418\u0419 \u0411\u041E\u0420"
+  NAME: "ТИХИЙ БОР"
 };
 var SPAWNS = {
   A: { team: "A", name: "ALPHA", x: -84, z: 84, color: 2905728 },
@@ -1591,10 +1591,10 @@ function addSym(pts, w, kind, opt = {}) {
 }
 var RING = [];
 for (let i = 0; i < 28; i++) RING.push(lakeContour(i / 28 * Math.PI * 2, 11.5));
-var RING_ROAD = addPath(RING, 4, "road", { closed: true, lit: true, name: "\u043A\u043E\u043B\u044C\u0446\u0435\u0432\u0430\u044F" });
+var RING_ROAD = addPath(RING, 4, "road", { closed: true, lit: true, name: "кольцевая" });
 var CLUSTERS = {
-  T: { x: -50, z: -50, name: "\u0422\u0443\u0440\u0431\u0430\u0437\u0430 \xAB\u041B\u0435\u0441\u043D\u043E\u0435\xBB" },
-  K: { x: 62, z: 62, name: "\u041F\u0438\u043E\u043D\u0435\u0440\u043B\u0430\u0433\u0435\u0440\u044C \xAB\u0412\u043E\u043B\u0447\u043E\u043D\u043E\u043A\xBB" }
+  T: { x: -50, z: -50, name: "Турбаза «Лесное»" },
+  K: { x: 62, z: 62, name: "Пионерлагерь «Волчонок»" }
 };
 var CAMP = { x: 62, z: 62, r0: -22, r1: 22, f0: -20, f1: 16 };
 var campXZ = (r, f) => [CAMP.x + (r - f) * S2, CAMP.z + (-r - f) * S2];
@@ -1607,28 +1607,28 @@ var inCamp = (x, z, pad = 0) => {
   return r > CAMP.r0 - pad && r < CAMP.r1 + pad && f > CAMP.f0 - pad && f < CAMP.f1 + pad;
 };
 var C = campXZ;
-addPath([[-33.5, -33.5], [-42, -41], [-50, -50], [-56, -66], [-61, -88], [-63, -108], [-64, -140]], 3.8, "road", { lit: false, name: "\u0441\u0442\u0430\u0440\u0430\u044F \u0434\u043E\u0440\u043E\u0433\u0430" });
-addPath([[33.5, 33.5], [42, 41], C(0, 20.5), C(-13, 22), C(-26.5, 17), C(-26.5, -20), C(-20, -27), [63, 108], [64, 140]], 3.8, "road", { lit: false, name: "\u0434\u043E\u0440\u043E\u0433\u0430 \u043A \u043B\u0430\u0433\u0435\u0440\u044E" });
-addPath([[-50, -50], [-57, -51], [-63, -49], [-68.5, -45]], 1.9, "trail", { lit: true, name: "\u0430\u043B\u043B\u0435\u044F \u0442\u0443\u0440\u0431\u0430\u0437\u044B" });
-addPath([[-57, -51], [-61, -55.5], [-63.8, -57.6]], 1.7, "trail", { lit: true, name: "\u043A \u043A\u043E\u0440\u043F\u0443\u0441\u0443" });
-addPath([[-50, -50], [-48, -62], [-46.4, -71]], 1.7, "trail", { lit: true, name: "\u043A \u0434\u043E\u043C\u0438\u043A\u0443" });
-addPath([[-17.5, -40.4], [-17, -37.4]], 1.6, "trail", { lit: true, name: "\u043A \u0431\u0430\u043D\u0435" });
-addPath([C(0, 18), C(0, 7)], 2.6, "trail", { lit: true, camp: true, name: "\u0430\u043B\u043B\u0435\u044F \u043B\u0430\u0433\u0435\u0440\u044F" });
-addPath([C(0, 6), C(0, -3)], 8, "trail", { lit: false, camp: true, name: "\u043B\u0438\u043D\u0435\u0439\u043A\u0430" });
-addPath([C(0, -3), C(0, -8.2)], 2.4, "trail", { lit: true, camp: true, name: "\u043A \u0441\u0442\u043E\u043B\u043E\u0432\u043E\u0439" });
-addPath([C(-10, 2), C(10, 2)], 2, "trail", { lit: false, camp: true, name: "\u043F\u043E\u043F\u0435\u0440\u0435\u0447\u043D\u0430\u044F \u0430\u043B\u043B\u0435\u044F" });
-addPath([C(-10, 13), C(-10, -12), C(-12, -15.6)], 1.8, "trail", { lit: true, camp: true, name: "\u043B\u0435\u0432\u0430\u044F \u0430\u043B\u043B\u0435\u044F" });
-addPath([C(10, 13), C(10, -12), C(13.5, -15.2)], 1.8, "trail", { lit: true, camp: true, name: "\u043F\u0440\u0430\u0432\u0430\u044F \u0430\u043B\u043B\u0435\u044F" });
-addPath([C(-10, -12), C(-16.5, -14.6)], 1.3, "trail", { lit: false, camp: true, name: "\u043A \u0442\u0443\u0430\u043B\u0435\u0442\u0430\u043C" });
-addPath([C(-10, 4), C(-17, 4.3), C(-24, 4)], 1.4, "trail", { lit: false, camp: true, name: "\u043A \u043A\u0430\u043B\u0438\u0442\u043A\u0435" });
-addSym([[-39.5, -39.5], [-34, -31.5], [-30.6, -30.6]], 1.8, "trail", { lit: true, name: "\u043A \u043F\u0438\u0440\u0441\u0443" });
-addSym([[-84, 84], [-92, 58], [-90, 28], [-82, 0], [-72, -24], [-60, -40], [-50, -50]], 2.2, "trail", { name: "\u0437\u0430\u043F\u0430\u0434\u043D\u0430\u044F \u0442\u0440\u043E\u043F\u0430" });
-addSym([[-84, 84], [-70, 70], [-56, 56], [-42, 42], [-26, 26]], 2.4, "trail", { name: "\u0446\u0435\u043D\u0442\u0440\u0430\u043B\u044C\u043D\u0430\u044F \u0442\u0440\u043E\u043F\u0430" });
-addPath([[84, -84], [58, -94], [30, -96], [2, -90], [-22, -80], [-40, -66], [-50, -50]], 2.2, "trail", { name: "\u044E\u0436\u043D\u0430\u044F \u0442\u0440\u043E\u043F\u0430*" });
-addPath([[-84, 84], [-58, 94], [-30, 96], [-2, 90], [22, 80], [34, 79], C(-24, 4)], 2.2, "trail", { name: "\u044E\u0436\u043D\u0430\u044F \u0442\u0440\u043E\u043F\u0430" });
-addSym([[-82, 0], [-62, -2], [-41, -7]], 1.8, "trail", { name: "\u0441\u0432\u044F\u0437\u043A\u0430 \u0417" });
-addSym([[-2, 90], [2, 66], [6.5, 41]], 1.8, "trail", { name: "\u0441\u0432\u044F\u0437\u043A\u0430 \u042E" });
-addSym([[-70, 70], [-80, 60], [-90, 44]], 1.6, "trail", { name: "\u0442\u044B\u043B A" });
+addPath([[-33.5, -33.5], [-42, -41], [-50, -50], [-56, -66], [-61, -88], [-63, -108], [-64, -140]], 3.8, "road", { lit: false, name: "старая дорога" });
+addPath([[33.5, 33.5], [42, 41], C(0, 20.5), C(-13, 22), C(-26.5, 17), C(-26.5, -20), C(-20, -27), [63, 108], [64, 140]], 3.8, "road", { lit: false, name: "дорога к лагерю" });
+addPath([[-50, -50], [-57, -51], [-63, -49], [-68.5, -45]], 1.9, "trail", { lit: true, name: "аллея турбазы" });
+addPath([[-57, -51], [-61, -55.5], [-63.8, -57.6]], 1.7, "trail", { lit: true, name: "к корпусу" });
+addPath([[-50, -50], [-48, -62], [-46.4, -71]], 1.7, "trail", { lit: true, name: "к домику" });
+addPath([[-17.5, -40.4], [-17, -37.4]], 1.6, "trail", { lit: true, name: "к бане" });
+addPath([C(0, 18), C(0, 7)], 2.6, "trail", { lit: true, camp: true, name: "аллея лагеря" });
+addPath([C(0, 6), C(0, -3)], 8, "trail", { lit: false, camp: true, name: "линейка" });
+addPath([C(0, -3), C(0, -8.2)], 2.4, "trail", { lit: true, camp: true, name: "к столовой" });
+addPath([C(-10, 2), C(10, 2)], 2, "trail", { lit: false, camp: true, name: "поперечная аллея" });
+addPath([C(-10, 13), C(-10, -12), C(-12, -15.6)], 1.8, "trail", { lit: true, camp: true, name: "левая аллея" });
+addPath([C(10, 13), C(10, -12), C(13.5, -15.2)], 1.8, "trail", { lit: true, camp: true, name: "правая аллея" });
+addPath([C(-10, -12), C(-16.5, -14.6)], 1.3, "trail", { lit: false, camp: true, name: "к туалетам" });
+addPath([C(-10, 4), C(-17, 4.3), C(-24, 4)], 1.4, "trail", { lit: false, camp: true, name: "к калитке" });
+addSym([[-39.5, -39.5], [-34, -31.5], [-30.6, -30.6]], 1.8, "trail", { lit: true, name: "к пирсу" });
+addSym([[-84, 84], [-92, 58], [-90, 28], [-82, 0], [-72, -24], [-60, -40], [-50, -50]], 2.2, "trail", { name: "западная тропа" });
+addSym([[-84, 84], [-70, 70], [-56, 56], [-42, 42], [-26, 26]], 2.4, "trail", { name: "центральная тропа" });
+addPath([[84, -84], [58, -94], [30, -96], [2, -90], [-22, -80], [-40, -66], [-50, -50]], 2.2, "trail", { name: "южная тропа*" });
+addPath([[-84, 84], [-58, 94], [-30, 96], [-2, 90], [22, 80], [34, 79], C(-24, 4)], 2.2, "trail", { name: "южная тропа" });
+addSym([[-82, 0], [-62, -2], [-41, -7]], 1.8, "trail", { name: "связка З" });
+addSym([[-2, 90], [2, 66], [6.5, 41]], 1.8, "trail", { name: "связка Ю" });
+addSym([[-70, 70], [-80, 60], [-90, 44]], 1.6, "trail", { name: "тыл A" });
 var PADS = [];
 function addPad(x, z, hw, hd, rot = 0, m = 3) {
   const p = { x, z, hw, hd, rot, m };
@@ -1658,7 +1658,7 @@ function makeIndex(lines, pad) {
   return grid;
 }
 var BRIDGE = { phi: 5.38 };
-addSym([lakeContour(BRIDGE.phi, 11.5), lakeContour(BRIDGE.phi, 6.5), lakeContour(BRIDGE.phi, 2.2)], 1.6, "trail", { name: "\u043A \u043C\u043E\u0441\u0442\u0443" });
+addSym([lakeContour(BRIDGE.phi, 11.5), lakeContour(BRIDGE.phi, 6.5), lakeContour(BRIDGE.phi, 2.2)], 1.6, "trail", { name: "к мосту" });
 var PATH_IDX = makeIndex(PATHS, 3);
 var TRENCHES = [];
 var DYN_CRATERS = [];
@@ -1708,11 +1708,11 @@ function arc(cx, cz, r, a0, a1, step, amp) {
 }
 {
   const cx = -62.5, cz = 62.5, ax = S2, az = S2, fx = S2, fz = -S2;
-  trenchSym(zigzag(cx, cz, ax, az, -28, -3, 1.6), { name: "\u0440\u0443\u0431\u0435\u0436, \u043B\u0435\u0432\u043E\u0435 \u043A\u0440\u044B\u043B\u043E", dugout0: true, bays: true });
-  trenchSym(zigzag(cx, cz, ax, az, 3, 28, 1.6), { name: "\u0440\u0443\u0431\u0435\u0436, \u043F\u0440\u0430\u0432\u043E\u0435 \u043A\u0440\u044B\u043B\u043E", bays: true });
-  trenchSym([[-54.8, 70.2], [-58, 74], [-62, 76], [-66, 80], [-70.5, 83.5]], { name: "\u0445\u043E\u0434 \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F", depth: 1.95, covered: true });
+  trenchSym(zigzag(cx, cz, ax, az, -28, -3, 1.6), { name: "рубеж, левое крыло", dugout0: true, bays: true });
+  trenchSym(zigzag(cx, cz, ax, az, 3, 28, 1.6), { name: "рубеж, правое крыло", bays: true });
+  trenchSym([[-54.8, 70.2], [-58, 74], [-62, 76], [-66, 80], [-70.5, 83.5]], { name: "ход сообщения", depth: 1.95, covered: true });
   const A2 = SPAWNS.A;
-  trenchSym(arc(A2.x, A2.z, 22, -1.74, 0.26, 4, 0.8), { name: "\u0432\u0442\u043E\u0440\u0430\u044F \u043B\u0438\u043D\u0438\u044F", depth: 1.55, bays: true, dugout1: true });
+  trenchSym(arc(A2.x, A2.z, 22, -1.74, 0.26, 4, 0.8), { name: "вторая линия", depth: 1.55, bays: true, dugout1: true });
   const onPlan = (x, z) => {
     let best = null, bd = 1e9;
     for (const o of TRENCH_PLAN) {
@@ -1727,26 +1727,26 @@ function arc(cx, cz, r, a0, a1, step, amp) {
   };
   for (const t of [-18, 18]) {
     const b2 = onPlan(cx + ax * t, cz + az * t);
-    trenchSym([b2, [b2[0] + fx * 4 + ax * 0.9, b2[1] + fz * 4 + az * 0.9], [b2[0] + fx * 9.5, b2[1] + fz * 9.5]], { name: "\u0441\u0430\u043F\u0430", depth: 1.5, sharp: true, nest1: true });
+    trenchSym([b2, [b2[0] + fx * 4 + ax * 0.9, b2[1] + fz * 4 + az * 0.9], [b2[0] + fx * 9.5, b2[1] + fz * 9.5]], { name: "сапа", depth: 1.5, sharp: true, nest1: true });
   }
-  trenchSym(zigzag(-80, 24, 0.34, -0.94, -10, 12, 1.3, 4.4), { name: "\u0444\u043B\u0430\u043D\u0433\u043E\u0432\u0430\u044F \u043F\u043E\u0437\u0438\u0446\u0438\u044F \u0417", bays: true, dugout1: true });
-  trenchSym(zigzag(-40, 40, S2, S2, -15, 15, 1.2, 4), { name: "\u043E\u043A\u043E\u043F \u0443 \u043A\u043E\u043B\u044C\u0446\u0435\u0432\u043E\u0439", depth: 1.5, bays: true });
+  trenchSym(zigzag(-80, 24, 0.34, -0.94, -10, 12, 1.3, 4.4), { name: "фланговая позиция З", bays: true, dugout1: true });
+  trenchSym(zigzag(-40, 40, S2, S2, -15, 15, 1.2, 4), { name: "окоп у кольцевой", depth: 1.5, bays: true });
   const a = lakeXZ(-9, -27), b = lakeXZ(0, -28.5), c = lakeXZ(9, -27);
-  trenchSym([a, b, c], { name: "\u0431\u0435\u0440\u0435\u0433\u043E\u0432\u044B\u0435 \u044F\u0447\u0435\u0439\u043A\u0438", depth: 1.6, lake: true });
-  addTrench([[-85, -28], [-82, -33], [-83, -38], [-80, -43], [-81, -49]], { name: "\u0442\u0440\u0430\u043D\u0448\u0435\u044F \u0442\u0443\u0440\u0431\u0430\u0437\u044B \u0417", depth: 1.5 });
-  addTrench([[-52, -81], [-46, -84], [-40, -82], [-34, -85]], { name: "\u0442\u0440\u0430\u043D\u0448\u0435\u044F \u0442\u0443\u0440\u0431\u0430\u0437\u044B \u0421", depth: 1.5 });
+  trenchSym([a, b, c], { name: "береговые ячейки", depth: 1.6, lake: true });
+  addTrench([[-85, -28], [-82, -33], [-83, -38], [-80, -43], [-81, -49]], { name: "траншея турбазы З", depth: 1.5 });
+  addTrench([[-52, -81], [-46, -84], [-40, -82], [-34, -85]], { name: "траншея турбазы С", depth: 1.5 });
   const Cz = (pts) => pts.map(([r, f]) => campXZ(r, f));
-  addTrench(Cz([[26.5, 12], [28, 7], [26.5, 2], [28, -3], [26.5, -8], [28, -13]]), { name: "\u043E\u043A\u043E\u043F \u0443 \u043B\u0430\u0433\u0435\u0440\u044F \u0412", depth: 1.6, bays: true });
-  addTrench(Cz([[-31, 12], [-32.5, 6], [-31, 0], [-32.5, -6], [-31, -12]]), { name: "\u043E\u043A\u043E\u043F \u0443 \u043B\u0430\u0433\u0435\u0440\u044F \u0417", depth: 1.6, bays: true });
-  addTrench(Cz([[-6, -24.5], [0, -26], [6, -24.5], [12, -26], [18, -24.5]]), { name: "\u043E\u043A\u043E\u043F \u0437\u0430 \u043B\u0430\u0433\u0435\u0440\u0435\u043C", depth: 1.6, bays: true });
+  addTrench(Cz([[26.5, 12], [28, 7], [26.5, 2], [28, -3], [26.5, -8], [28, -13]]), { name: "окоп у лагеря В", depth: 1.6, bays: true });
+  addTrench(Cz([[-31, 12], [-32.5, 6], [-31, 0], [-32.5, -6], [-31, -12]]), { name: "окоп у лагеря З", depth: 1.6, bays: true });
+  addTrench(Cz([[-6, -24.5], [0, -26], [6, -24.5], [12, -26], [18, -24.5]]), { name: "окоп за лагерем", depth: 1.6, bays: true });
   for (const [p0, p1, off] of [[3.62, 3.98, 6.2], [4.18, 4.5, 6.4], [4.95, 5.3, 6.4], [5.86, 6.1, 6.2]]) {
     const pts = [];
     for (let k = 0, n2 = 7; k <= n2; k++) pts.push(lakeContour(p0 + (p1 - p0) * k / n2, off + (k % 2 ? 0.9 : -0.9) * (k > 0 && k < n2 ? 1 : 0)));
-    trenchSym(pts, { name: "\u0431\u0435\u0440\u0435\u0433\u043E\u0432\u0430\u044F \u0442\u0440\u0430\u043D\u0448\u0435\u044F", depth: 1.7, bays: true, lake: true });
+    trenchSym(pts, { name: "береговая траншея", depth: 1.7, bays: true, lake: true });
   }
-  trenchSym([[-40.5, 70], [-36, 62], [-33, 55], [-29, 49]], { name: "\u0445\u043E\u0434 \u043A \u0431\u0435\u0440\u0435\u0433\u0443", depth: 1.6 });
-  trenchSym(zigzag(-96, 8, 0.2, -0.98, -6, 6, 1.1, 4), { name: "\u0441\u0435\u043A\u0440\u0435\u0442 \u0443 \u043C\u0438\u043D\u043D\u043E\u0433\u043E \u043F\u043E\u043B\u044F", depth: 1.6, bays: true });
-  trenchSym(zigzag(-12, 76, 0.94, 0.34, -7, 7, 1.1, 4.5), { name: "\u043E\u043A\u043E\u043F \u0443 \u0441\u0432\u044F\u0437\u043A\u0438 \u042E", depth: 1.6, bays: true });
+  trenchSym([[-40.5, 70], [-36, 62], [-33, 55], [-29, 49]], { name: "ход к берегу", depth: 1.6 });
+  trenchSym(zigzag(-96, 8, 0.2, -0.98, -6, 6, 1.1, 4), { name: "секрет у минного поля", depth: 1.6, bays: true });
+  trenchSym(zigzag(-12, 76, 0.94, 0.34, -7, 7, 1.1, 4.5), { name: "окоп у связки Ю", depth: 1.6, bays: true });
 }
 for (let i = 0; i < TRENCH_PLAN.length; i++) {
   const { pts, opt } = TRENCH_PLAN[i];
@@ -1844,8 +1844,8 @@ function addStream(pts, name) {
 }
 {
   const S = [[20, 140], [19, 118], [18, 104], [17, 92], [16, 80], [14, 68], [13, 56], [12, 46], [11, 38], [10, 30], [9, 26]];
-  addStream(S, "\u0440\u0443\u0447\u0435\u0439 \u0421\u0442\u0443\u0434\u0451\u043D\u044B\u0439");
-  addStream(mirrorPts(S), "\u0440\u0443\u0447\u0435\u0439 \u0421\u0442\u0443\u0434\u0451\u043D\u044B\u0439*");
+  addStream(S, "ручей Студёный");
+  addStream(mirrorPts(S), "ручей Студёный*");
 }
 var STREAM_IDX = makeIndex(STREAMS, 6);
 var STREAM_BW = 1.05;
@@ -3138,7 +3138,7 @@ function mineSign(variant = 0) {
     x.font = "bold 34px Arial, sans-serif";
     x.textAlign = "center";
     x.fillStyle = "#141414";
-    x.fillText("\u041C\u0418\u041D\u042B", W / 2, H2 - 50);
+    x.fillText("МИНЫ", W / 2, H2 - 50);
     x.fillStyle = "#9c1b14";
     x.font = "bold 22px Arial, sans-serif";
     x.fillText("MINES", W / 2, H2 - 8);
@@ -3148,12 +3148,12 @@ function mineSign(variant = 0) {
     x.fillStyle = "#ece6d6";
     x.textAlign = "center";
     x.font = "bold 40px Arial, sans-serif";
-    x.fillText("\u0421\u0422\u041E\u0419!", W / 2, 70);
+    x.fillText("СТОЙ!", W / 2, 70);
     x.font = "bold 44px Arial, sans-serif";
-    x.fillText("\u041C\u0418\u041D\u042B", W / 2, 136);
+    x.fillText("МИНЫ", W / 2, 136);
     x.font = "bold 24px Arial, sans-serif";
-    x.fillText("\u041F\u0420\u041E\u0425\u041E\u0414", W / 2, 186);
-    x.fillText("\u0417\u0410\u041F\u0420\u0415\u0429\u0401\u041D", W / 2, 216);
+    x.fillText("ПРОХОД", W / 2, 186);
+    x.fillText("ЗАПРЕЩЁН", W / 2, 216);
   }
   for (let i = 0; i < 70; i++) blob(x, srnd() * W, srnd() * H2, sr(3, 16), [120, 70, 40], sr(0.2, 0.6));
   for (let i = 0; i < si(2, 6); i++) {
@@ -3649,7 +3649,7 @@ function injectWind(mat, o = {}) {
         float fl = ${flutter} * uWindAmp * min(k, 1.5);
         disp += vec3(sin(uTime * 6.1 + wp.x * 2.3 + wp.y * 1.3), sin(uTime * 5.3 + wp.z * 2.1) * 0.5,
                      cos(uTime * 6.7 + wp.z * 2.2 + wp.y * 1.1)) * fl;
-        // \u0443\u0434\u0430\u0440\u043D\u0430\u044F \u0432\u043E\u043B\u043D\u0430: \u0444\u0440\u043E\u043D\u0442 ~70 \u043C/\u0441, \u0437\u0430\u0442\u0443\u0445\u0430\u044E\u0449\u0435\u0435 \u043A\u043E\u043B\u0435\u0431\u0430\u043D\u0438\u0435 \u043F\u043E\u0441\u043B\u0435 \u043F\u0440\u043E\u0445\u043E\u0434\u0430
+        // ударная волна: фронт ~70 м/с, затухающее колебание после прохода
         vec2 bd = wp.xz - uBlast.xz;
         float bdist = length(bd);
         float tau = uBlast.w - bdist / 70.0;
@@ -3706,7 +3706,7 @@ function injectStructFX(mat) {
         float chK = smoothstep(0.02, 0.55, chS.r + (chn - 0.5) * 0.3 * chS.r);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.022, 0.02) * (0.6 + chn * 0.8), chK * 0.96);`).replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
         {
-          // \u0442\u043B\u0435\u044E\u0449\u0438\u0435 \u0442\u0440\u0435\u0449\u0438\u043D\u044B: \u0442\u043E\u043D\u043A\u0438\u0435 \u043F\u0440\u043E\u0436\u0438\u043B\u043A\u0438 \u043F\u043E \u043E\u0431\u0443\u0433\u043B\u0435\u043D\u043D\u043E\u043C\u0443, \u043C\u0435\u0440\u0446\u0430\u044E\u0442
+          // тлеющие трещины: тонкие прожилки по обугленному, мерцают
           float fl = 0.65 + 0.35 * sin(uFxT * 7.0 + vSW.x * 3.1 + vSW.z * 2.3);
           float cr = abs(sin(vSW.x * 6.3 + vSW.y * 9.1 + sin(vSW.z * 4.7) * 2.0) * sin(vSW.z * 5.9 - vSW.y * 7.7 + sin(vSW.x * 3.3) * 2.0));
           cr = smoothstep(0.975, 1.0, 1.0 - cr);
@@ -3814,8 +3814,8 @@ function buildMaterials() {
   TEX.fire = radial([[0, "rgba(255,250,220,1)"], [0.25, "rgba(255,190,90,.9)"], [0.6, "rgba(220,80,20,.35)"], [1, "rgba(120,20,0,0)"]]);
   TEX.crater = craterTex();
   TEX.water = waterNormals();
-  TEX.board = boardSign(["\u0422\u0423\u0420\u0411\u0410\u0417\u0410", "\xAB\u041B\u0415\u0421\u041D\u041E\u0415\xBB", "\u0434\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C"]);
-  TEX.boardK = boardSign(["\u041B\u0415\u0421\u041D\u0418\u0427\u0415\u0421\u0422\u0412\u041E", "\u041A\u041E\u0420\u0414\u041E\u041D \u21164", "\u0431\u0435\u0440\u0435\u0433\u0438\u0442\u0435 \u043B\u0435\u0441"], "#3b3a2c");
+  TEX.board = boardSign(["ТУРБАЗА", "«ЛЕСНОЕ»", "добро пожаловать"]);
+  TEX.boardK = boardSign(["ЛЕСНИЧЕСТВО", "КОРДОН №4", "берегите лес"], "#3b3a2c");
   M.planksCamp = surf(planks([92, 118, 128]), { rough: 0.9 });
   M.planksWhite = surf(planks([176, 172, 158]), { rough: 0.88 });
   M.planksCream = surf(planks([150, 132, 96]), { rough: 0.9 });
@@ -3825,23 +3825,23 @@ function buildMaterials() {
   M.steelPipe = surf(rustMetal([110, 116, 112], 1.1, 256), { rough: 0.6, metal: 0.55 });
   M.barkLog = surf(planks([96, 78, 60], 3), { rough: 0.95 });
   const sign2 = (t) => std({ map: t, roughness: 0.8, side: THREE5.DoubleSide });
-  M.signGate = sign2(campSign(["\u041F\u0418\u041E\u041D\u0415\u0420\u0421\u041A\u0418\u0419 \u041B\u0410\u0413\u0415\u0420\u042C", "\xAB\u0412\u041E\u041B\u0427\u041E\u041D\u041E\u041A\xBB"], { w: 1024, h: 200, sizes: [52, 84] }));
-  M.signDining = sign2(campSign(["\u0421\u0422\u041E\u041B\u041E\u0412\u0410\u042F"], { w: 512, h: 128, bg: "#e2dccb", fg: "#9b2a22", sizes: [80] }));
-  M.signWC = sign2(campSign(["\u041C", "\u0416"], { w: 256, h: 128, bg: "#dcd6c4", fg: "#2c4f6e", sizes: [70, 70] }));
-  M.signWash = sign2(campSign(["\u0423\u041C\u042B\u0412\u0410\u041B\u042C\u041D\u0418\u041A"], { w: 512, h: 96, bg: "#2f5a6e", fg: "#e8e0c8", sizes: [60] }));
-  M.signShower = sign2(campSign(["\u0414\u0423\u0428"], { w: 256, h: 96, bg: "#2f5a6e", fg: "#e8e0c8", sizes: [64] }));
-  M.signMotto = sign2(campSign(["\u0411\u0423\u0414\u042C \u0413\u041E\u0422\u041E\u0412!", "\u0412\u0421\u0415\u0413\u0414\u0410 \u0413\u041E\u0422\u041E\u0412!"], { w: 1024, h: 256, bg: "#a82a22", fg: "#efe6c8", sizes: [96, 96] }));
-  M.signCabin = [1, 2, 3, 4, 5, 6].map((n2) => sign2(campSign([`\u041E\u0422\u0420\u042F\u0414 ${n2}`], { w: 256, h: 96, bg: "#e2dccb", fg: "#2c4f6e", sizes: [58] })));
+  M.signGate = sign2(campSign(["ПИОНЕРСКИЙ ЛАГЕРЬ", "«ВОЛЧОНОК»"], { w: 1024, h: 200, sizes: [52, 84] }));
+  M.signDining = sign2(campSign(["СТОЛОВАЯ"], { w: 512, h: 128, bg: "#e2dccb", fg: "#9b2a22", sizes: [80] }));
+  M.signWC = sign2(campSign(["М", "Ж"], { w: 256, h: 128, bg: "#dcd6c4", fg: "#2c4f6e", sizes: [70, 70] }));
+  M.signWash = sign2(campSign(["УМЫВАЛЬНИК"], { w: 512, h: 96, bg: "#2f5a6e", fg: "#e8e0c8", sizes: [60] }));
+  M.signShower = sign2(campSign(["ДУШ"], { w: 256, h: 96, bg: "#2f5a6e", fg: "#e8e0c8", sizes: [64] }));
+  M.signMotto = sign2(campSign(["БУДЬ ГОТОВ!", "ВСЕГДА ГОТОВ!"], { w: 1024, h: 256, bg: "#a82a22", fg: "#efe6c8", sizes: [96, 96] }));
+  M.signCabin = [1, 2, 3, 4, 5, 6].map((n2) => sign2(campSign([`ОТРЯД ${n2}`], { w: 256, h: 96, bg: "#e2dccb", fg: "#2c4f6e", sizes: [58] })));
   M.wolf = sign2(wolfBadge());
   M.flagRag = std({ color: 9316898, roughness: 0.95, side: THREE5.DoubleSide });
   M.stumpTop = std({ map: stumpTop(), roughness: 0.95 });
   M.holes = std({ map: bulletHoles(), transparent: true, depthWrite: false, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   {
     const sheets = [
-      ["#\u041F\u041E\u0417\u042B\u0412\u041D\u042B\u0415", "\u0411\u0435\u0440\u0451\u0437\u0430-1 \u2014 \u041A\u041F", "\u0413\u0440\u043E\u043C \u2014 \u043C\u0438\u043D\u043E\u043C\u0451\u0442", "\u0421\u043E\u043A\u043E\u043B \u2014 \u043F\u0442\u0438\u0447\u043A\u0430 (\u0434\u0440\u043E\u043D)", "\u0412\u0435\u0442\u0435\u0440-2 \u2014 \u043B\u0435\u0432. \u0444\u043B\u0430\u043D\u0433", "\u0412\u0435\u0442\u0435\u0440-3 \u2014 \u043F\u0440\u0430\u0432. \u0444\u043B\u0430\u043D\u0433", "\u041B\u0435\u0441\u043D\u0438\u043A \u2014 \u0440\u0430\u0437\u0432\u0435\u0434\u043A\u0430", "\u041A\u0435\u0434\u0440 \u2014 \u044D\u0432\u0430\u043A\u0443\u0430\u0446\u0438\u044F", "", "\u043D\u0435 \u043F\u0443\u0442\u0430\u0442\u044C \u0412\u0435\u0442\u0435\u0440 \u0441 \u0412\u0435\u043F\u0440\u0435\u043C!"],
-      ["#\u0421\u0412\u042F\u0417\u042C", "\u043E\u0441\u043D. 146.500", "\u0437\u0430\u043F. 147.225", "\u0448\u0438\u0444\u0440. \u0442\u0430\u0431\u043B\u0438\u0446\u0430 \u2014 \u0443 \u0441\u0442.", "", "#\u041F\u0410\u0420\u041E\u041B\u042C", "\u0417\u0412\u0415\u0417\u0414\u0410 \u2014 \u043E\u0442\u0437\u044B\u0432 \u041C\u0410\u042F\u041A", "\u0441 00:00 \u2014 \u0418\u0412\u041E\u041B\u0413\u0410 /", "                     \u041A\u041E\u0421\u0422\u0401\u0420"],
-      ["#\u041E\u0420\u0418\u0415\u041D\u0422\u0418\u0420\u042B", "1 \u2014 \u0432\u044B\u0448\u043A\u0430 (\u043F\u043E\u0436\u0430\u0440\u043D\u0430\u044F)", "2 \u2014 \u0432\u043E\u0434\u043E\u043A\u0430\u0447\u043A\u0430 \u043B\u0430\u0433\u0435\u0440\u044F", "3 \u2014 \u0441\u0433\u043E\u0440\u0435\u0432\u0448\u0430\u044F \u0411\u041C\u041F", "4 \u2014 \u043E\u0441\u0442\u0440\u043E\u0432, \u0431\u0435\u0441\u0435\u0434\u043A\u0430", "5 \u2014 \u043C\u043E\u0441\u0442 (\u0437\u0430\u043C\u0438\u043D\u0438\u0440.?)"],
-      ["#\u0421\u0425\u0415\u041C\u0410", "\u043D\u0430\u0448\u0438 \u2014", "\u043E\u043D\u0438 \u2014 >", "X \u2014 \u043F\u0443\u043B\u0435\u043C\u0451\u0442"]
+      ["#ПОЗЫВНЫЕ", "Берёза-1 — КП", "Гром — миномёт", "Сокол — птичка (дрон)", "Ветер-2 — лев. фланг", "Ветер-3 — прав. фланг", "Лесник — разведка", "Кедр — эвакуация", "", "не путать Ветер с Вепрем!"],
+      ["#СВЯЗЬ", "осн. 146.500", "зап. 147.225", "шифр. таблица — у ст.", "", "#ПАРОЛЬ", "ЗВЕЗДА — отзыв МАЯК", "с 00:00 — ИВОЛГА /", "                     КОСТЁР"],
+      ["#ОРИЕНТИРЫ", "1 — вышка (пожарная)", "2 — водокачка лагеря", "3 — сгоревшая БМП", "4 — остров, беседка", "5 — мост (заминир.?)"],
+      ["#СХЕМА", "наши —", "они — >", "X — пулемёт"]
     ].map((l, i) => paperSheet(l, { grid: i === 3, sketch: i === 3, bg: i === 1 ? "#e2dcc6" : void 0, ink: i === 2 ? "#2a2a2a" : void 0 }).image);
     const W = sheets[0].width, H2 = sheets[0].height, c = document.createElement("canvas");
     c.width = W * 2;
@@ -4307,7 +4307,7 @@ function buildForest() {
     }
     spots.push([x, z]);
   }
-  console.info(`[forest] \u0442\u043E\u0447\u0435\u043A ${spots.length}, \u043E\u0442\u043A\u0430\u0437 \u043F\u043E \u043F\u043B\u043E\u0442\u043D\u043E\u0441\u0442\u0438 ${rejD}, \u043F\u043E \u0437\u0430\u043D\u044F\u0442\u043E\u0441\u0442\u0438 ${rejF}`);
+  console.info(`[forest] точек ${spots.length}, отказ по плотности ${rejD}, по занятости ${rejF}`);
   spots.push([ISLAND.x + 1.2, ISLAND.z - 0.8, "pine", 23]);
   const variants = {};
   let seed = 100;
@@ -4554,7 +4554,7 @@ var V1 = null;
 var Q0 = null;
 async function initPhysics() {
   if (typeof window.Ammo !== "function") {
-    console.warn("[phys] ammo.js \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D \u2014 \u0443\u043F\u0440\u043E\u0449\u0451\u043D\u043D\u0430\u044F \u0444\u0438\u0437\u0438\u043A\u0430");
+    console.warn("[phys] ammo.js не найден — упрощённая физика");
     return false;
   }
   try {
@@ -4566,7 +4566,7 @@ async function initPhysics() {
     } else opt.locateFile = (f) => new URL("lib/ammo/" + f, document.baseURI).href;
     A = await window.Ammo(opt);
   } catch (e) {
-    console.warn("[phys] ammo.js \u043D\u0435 \u0438\u043D\u0438\u0446\u0438\u0430\u043B\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u043B\u0441\u044F", e);
+    console.warn("[phys] ammo.js не инициализировался", e);
     return false;
   }
   PHYS.A = A;
@@ -4624,7 +4624,7 @@ function buildStaticWorld(H2, HN2, HS2, R2) {
   PHYS.hf = { ptr, n: HN2, obj: staticObject(shape, -R2 + (HN2 - 1) * HS2 / 2, (lo + hi) / 2, -R2 + (HN2 - 1) * HS2 / 2, 0, -1) };
   let n2 = 0;
   for (let i = 0; i < COLLIDERS.length; i++) if (!COLLIDERS[i].dyn) addStaticCollider(COLLIDERS[i], i), n2++;
-  console.info(`[phys] \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0445 \u0442\u0435\u043B: ${n2}`);
+  console.info(`[phys] статических тел: ${n2}`);
 }
 function addStaticCollider(c, idx2 = COLLIDERS.indexOf(c)) {
   if (!PHYS.ready || c.dead) return;
@@ -5059,7 +5059,7 @@ function groundMaterial() {
         vec3 cF = texture2D(tFloor, wuv * 0.21).rgb;
         vec3 cF2 = texture2D(tFloor, wuv * 0.047 + 0.37).rgb;
         cF = mix(cF, cF2, 0.4 + 0.3 * (macro - 0.5));
-        // \u043C\u043E\u0445 \u043D\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0445 \u043C\u0435\u0441\u0442\u0430\u0445, \u0441\u0443\u0445\u0430\u044F \u0440\u044B\u0436\u0430\u044F \u0445\u0432\u043E\u044F \u043F\u043E\u0434 \u043F\u043B\u043E\u0442\u043D\u044B\u043C\u0438 \u043A\u0440\u043E\u043D\u0430\u043C\u0438
+        // мох на открытых местах, сухая рыжая хвоя под плотными кронами
         float canopy = vSplat.w;
         vec3 moss = vec3(0.075, 0.105, 0.035);
         vec3 needles = vec3(0.16, 0.085, 0.035);
@@ -5068,7 +5068,7 @@ function groundMaterial() {
         vec3 cP = texture2D(tPath, wuv * 0.33).rgb;
         vec3 cM = texture2D(tMud, wuv * 0.28).rgb;
         vec3 cD = texture2D(tDug, wuv * 0.3).rgb;
-        // \u0448\u0443\u043C \u043D\u0430 \u0433\u0440\u0430\u043D\u0438\u0446\u0430\u0445 \u0441\u043B\u043E\u0451\u0432: \u043F\u0435\u0440\u0435\u0445\u043E\u0434\u044B \u0440\u0432\u0430\u043D\u044B\u0435, \u0430 \u043D\u0435 \u0433\u0440\u0430\u0434\u0438\u0435\u043D\u0442\u043D\u044B\u0435
+        // шум на границах слоёв: переходы рваные, а не градиентные
         float edgeN = gNoise(wuv * 0.9) - 0.5;
         float wP = smoothstep(0.15, 0.75, vSplat.x + edgeN * 0.35);
         float wM = smoothstep(0.1, 0.8, vSplat.y + edgeN * 0.3);
@@ -5078,13 +5078,13 @@ function groundMaterial() {
         col = mix(col, cP, wP);
         col = mix(col, cM, wM);
         gW = vec3(wP, wM, wD);
-        // \u0437\u0430\u0442\u043E\u043F\u043B\u0435\u043D\u043D\u044B\u0439 \u0431\u0435\u0440\u0435\u0433 \u0442\u0435\u043C\u043D\u0435\u0435, \u0434\u043D\u043E \u043F\u043E\u0434 \u0432\u043E\u0434\u043E\u0439 \u2014 \u0435\u0449\u0451 \u0442\u0435\u043C\u043D\u0435\u0435
+        // затопленный берег темнее, дно под водой — ещё темнее
         col *= mix(1.0, 0.55, smoothstep(0.35, 0.95, vSplat.y) * (1.0 - wP));
-        // \u0433\u0430\u0440\u044C: \u043A\u043E\u043F\u043E\u0442\u044C \u0441 \u043F\u044F\u0442\u043D\u0430\u043C\u0438 \u043F\u0435\u043F\u043B\u0430
+        // гарь: копоть с пятнами пепла
         gBurn = burnAt(wuv);
         float ash = gNoise(wuv * 2.3);
         col = mix(col, mix(vec3(0.028, 0.025, 0.022), vec3(0.16, 0.15, 0.14), smoothstep(0.62, 0.9, ash) * 0.6), gBurn.r * 0.92);
-        // \u043C\u043E\u043A\u0440\u0430\u044F \u0437\u0435\u043C\u043B\u044F \u0442\u0435\u043C\u043D\u0435\u0435; \u043B\u0443\u0436\u0438 \u2014 \u0432 \u043A\u043E\u043B\u0435\u044F\u0445, \u043D\u0438\u0437\u0438\u043D\u0430\u0445, \u0432\u043E\u0440\u043E\u043D\u043A\u0430\u0445 \u0438 \u043D\u0430 \u0434\u043D\u0435 \u043E\u043A\u043E\u043F\u043E\u0432
+        // мокрая земля темнее; лужи — в колеях, низинах, воронках и на дне окопов
         gWetK = uWetG * (1.0 - smoothstep(0.35, 0.9, vSplat.w) * 0.35);
         float low = smoothstep(0.92, 0.6, vAO);
         float pn = gNoise(wuv * 0.23) * 0.65 + gNoise(wuv * 0.9) * 0.35;
@@ -5118,7 +5118,7 @@ function groundMaterial() {
           vec3 nt = nF;
           nt = mix(nt, nD, gW.z); nt = mix(nt, nP, gW.x); nt = mix(nt, nM * vec3(0.6, 0.6, 1.0), gW.y);
           vec3 nW = normalize(normalize(vWN) + vec3(nt.x, 0.0, nt.y) * 0.9 * (1.0 - gPuddle * 0.9));
-          // \u043A\u0430\u043F\u043B\u0438 \u043F\u043E \u043B\u0443\u0436\u0430\u043C: \u0440\u0430\u0441\u0445\u043E\u0434\u044F\u0449\u0438\u0435\u0441\u044F \u043A\u043E\u043B\u044C\u0446\u0430 \u0432 \u044F\u0447\u0435\u0439\u043A\u0430\u0445 \u0441\u043E \u0441\u043B\u0443\u0447\u0430\u0439\u043D\u043E\u0439 \u0444\u0430\u0437\u043E\u0439
+          // капли по лужам: расходящиеся кольца в ячейках со случайной фазой
           if (gPuddle > 0.01 && uRain > 0.01) {
             vec2 rp = vec2(0.0);
             for (int k = 0; k < 2; k++) {
@@ -5147,10 +5147,10 @@ function groundMaterial() {
       "#include <emissivemap_fragment>",
       /* glsl */
       `
-        // \u0442\u043B\u0435\u044E\u0449\u0438\u0435 \u0443\u0433\u043B\u0438: \u043C\u0435\u0440\u0446\u0430\u044E\u0442 \u043F\u043E\u0434 \u043F\u0435\u043F\u043B\u043E\u043C, \u043D\u043E\u0447\u044C\u044E \u0437\u0430\u043C\u0435\u0442\u043D\u043E \u043F\u043E\u0434\u0441\u0432\u0435\u0447\u0438\u0432\u0430\u044E\u0442 \u0437\u0435\u043C\u043B\u044E
+        // тлеющие угли: мерцают под пеплом, ночью заметно подсвечивают землю
         float emb = gBurn.g * (0.6 + 0.4 * sin(uFxT * 7.0 + gNoise(vWPos.xz * 3.0) * 12.0)) * smoothstep(0.45, 0.85, gNoise(vWPos.xz * 4.3 + uFxT * 0.2));
         totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * emb * emb * 1.4;
-        // \u043A\u0430\u0443\u0441\u0442\u0438\u043A\u0438: \u043F\u043B\u044F\u0448\u0443\u0449\u0430\u044F \u0441\u0435\u0442\u043A\u0430 \u0441\u0432\u0435\u0442\u0430 \u043D\u0430 \u0434\u043D\u0435 \u0443 \u0431\u0435\u0440\u0435\u0433\u0430
+        // каустики: пляшущая сетка света на дне у берега
         float uw = clamp((${MAP.WATER_Y.toFixed(3)} - vWPos.y) * 3.0, 0.0, 1.0) * clamp(1.0 - (${MAP.WATER_Y.toFixed(3)} - vWPos.y) * 0.35, 0.0, 1.0);
         if (uw > 0.0 && uCaus > 0.0) {
           vec2 cp = vWPos.xz * 0.9;
@@ -5191,10 +5191,10 @@ import { Sky } from "three/addons/objects/Sky.js";
 // src/world/weather.js
 import * as THREE9 from "three";
 var MODES = {
-  clear: { name: "\u044F\u0441\u043D\u043E", ov: 0.05, rain: 0, storm: 0, wind: 0.6, fog: 0 },
-  cloudy: { name: "\u043F\u0430\u0441\u043C\u0443\u0440\u043D\u043E", ov: 0.7, rain: 0, storm: 0, wind: 0.8, fog: 0.25 },
-  rain: { name: "\u0434\u043E\u0436\u0434\u044C", ov: 0.88, rain: 0.6, storm: 0, wind: 0.95, fog: 0.55 },
-  storm: { name: "\u0433\u0440\u043E\u0437\u0430", ov: 1, rain: 1, storm: 1, wind: 1.45, fog: 0.8 }
+  clear: { name: "ясно", ov: 0.05, rain: 0, storm: 0, wind: 0.6, fog: 0 },
+  cloudy: { name: "пасмурно", ov: 0.7, rain: 0, storm: 0, wind: 0.8, fog: 0.25 },
+  rain: { name: "дождь", ov: 0.88, rain: 0.6, storm: 0, wind: 0.95, fog: 0.55 },
+  storm: { name: "гроза", ov: 1, rain: 1, storm: 1, wind: 1.45, fog: 0.8 }
 };
 var WEATHER = {
   mode: "clear",
@@ -5262,7 +5262,7 @@ var RAIN_VS = (
     vec3 p = aR.xyz * box + vel * uT;
     vec3 w = uC + mod(p - uC + box * 0.5, box) - box * 0.5;
     float ground = max(texture2D(uH, (w.xz - uHB.xy) * uHB.z).r, WATER_Y);
-    // \u043A\u0430\u043F\u043B\u044F \u0432\u0438\u0434\u043D\u0430, \u0435\u0441\u043B\u0438 \u0435\u0451 \xAB\u043D\u043E\u043C\u0435\u0440\xBB \u0443\u043A\u043B\u0430\u0434\u044B\u0432\u0430\u0435\u0442\u0441\u044F \u0432 \u0442\u0435\u043A\u0443\u0449\u0443\u044E \u0441\u0438\u043B\u0443 \u0434\u043E\u0436\u0434\u044F \u0438 \u043E\u043D\u0430 \u0432\u044B\u0448\u0435 \u0437\u0435\u043C\u043B\u0438
+    // капля видна, если её «номер» укладывается в текущую силу дождя и она выше земли
     float on = step(aR.w, uI) * step(ground, w.y);
     vec3 axis = normalize(vel);
     vec3 toCam = normalize(cameraPosition - w);
@@ -5529,22 +5529,22 @@ var weatherStats = () => ({ weather: WEATHER.mode, rain: +WEATHER.rain.toFixed(2
 
 // src/world/sky.js
 var KEYS = [
-  { h: 0, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "\u043D\u043E\u0447\u044C" },
-  { h: 4.4, sun: [0.55, 0.62, 0.85], sunI: 0.2, hs: [0.12, 0.14, 0.24], hg: [0.04, 0.045, 0.05], hI: 0.5, fog: [0.08, 0.09, 0.13], fogD: 0.024, exp: 1.35, turb: 3, ray: 1.6, mie: 0.012, label: "\u043F\u0440\u0435\u0434\u0440\u0430\u0441\u0441\u0432\u0435\u0442" },
-  { h: 6.2, sun: [1, 0.5, 0.28], sunI: 1.7, hs: [0.54, 0.45, 0.44], hg: [0.24, 0.19, 0.14], hI: 0.7, fog: [0.6, 0.47, 0.42], fogD: 0.021, exp: 1.12, turb: 5.5, ray: 3.2, mie: 0.03, label: "\u0440\u0430\u0441\u0441\u0432\u0435\u0442" },
-  { h: 8.3, sun: [1, 0.84, 0.66], sunI: 3.8, hs: [0.64, 0.68, 0.74], hg: [0.42, 0.38, 0.28], hI: 0.86, fog: [0.64, 0.68, 0.7], fogD: 78e-4, exp: 1.02, turb: 3, ray: 1.6, mie: 0.01, label: "\u0443\u0442\u0440\u043E" },
-  { h: 13, sun: [1, 0.96, 0.9], sunI: 4.9, hs: [0.64, 0.7, 0.78], hg: [0.46, 0.41, 0.3], hI: 0.92, fog: [0.66, 0.72, 0.78], fogD: 48e-4, exp: 0.95, turb: 1.9, ray: 1.1, mie: 5e-3, label: "\u0434\u0435\u043D\u044C" },
-  { h: 17.3, sun: [1, 0.87, 0.68], sunI: 4, hs: [0.64, 0.66, 0.7], hg: [0.46, 0.4, 0.29], hI: 0.88, fog: [0.68, 0.68, 0.66], fogD: 66e-4, exp: 1, turb: 2.8, ray: 1.5, mie: 0.01, label: "\u0434\u0435\u043D\u044C" },
-  { h: 19.5, sun: [1, 0.45, 0.19], sunI: 3.1, hs: [0.58, 0.4, 0.34], hg: [0.24, 0.17, 0.12], hI: 0.62, fog: [0.62, 0.38, 0.26], fogD: 0.0105, exp: 1.02, turb: 6.5, ray: 3.6, mie: 0.042, label: "\u0437\u0430\u043A\u0430\u0442" },
-  { h: 20.8, sun: [0.85, 0.3, 0.16], sunI: 0.6, hs: [0.3, 0.28, 0.42], hg: [0.11, 0.1, 0.1], hI: 0.54, fog: [0.34, 0.24, 0.28], fogD: 0.016, exp: 1.18, turb: 5, ray: 3, mie: 0.03, label: "\u0441\u0443\u043C\u0435\u0440\u043A\u0438" },
-  { h: 22, sun: [0.55, 0.64, 0.88], sunI: 0.26, hs: [0.1, 0.13, 0.22], hg: [0.035, 0.045, 0.055], hI: 0.44, fog: [0.07, 0.08, 0.12], fogD: 0.02, exp: 1.38, turb: 3, ray: 1.2, mie: 8e-3, label: "\u043D\u043E\u0447\u044C" },
-  { h: 24, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "\u043D\u043E\u0447\u044C" }
+  { h: 0, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" },
+  { h: 4.4, sun: [0.55, 0.62, 0.85], sunI: 0.2, hs: [0.12, 0.14, 0.24], hg: [0.04, 0.045, 0.05], hI: 0.5, fog: [0.08, 0.09, 0.13], fogD: 0.024, exp: 1.35, turb: 3, ray: 1.6, mie: 0.012, label: "предрассвет" },
+  { h: 6.2, sun: [1, 0.5, 0.28], sunI: 1.7, hs: [0.54, 0.45, 0.44], hg: [0.24, 0.19, 0.14], hI: 0.7, fog: [0.6, 0.47, 0.42], fogD: 0.021, exp: 1.12, turb: 5.5, ray: 3.2, mie: 0.03, label: "рассвет" },
+  { h: 8.3, sun: [1, 0.84, 0.66], sunI: 3.8, hs: [0.64, 0.68, 0.74], hg: [0.42, 0.38, 0.28], hI: 0.86, fog: [0.64, 0.68, 0.7], fogD: 78e-4, exp: 1.02, turb: 3, ray: 1.6, mie: 0.01, label: "утро" },
+  { h: 13, sun: [1, 0.96, 0.9], sunI: 4.9, hs: [0.64, 0.7, 0.78], hg: [0.46, 0.41, 0.3], hI: 0.92, fog: [0.66, 0.72, 0.78], fogD: 48e-4, exp: 0.95, turb: 1.9, ray: 1.1, mie: 5e-3, label: "день" },
+  { h: 17.3, sun: [1, 0.87, 0.68], sunI: 4, hs: [0.64, 0.66, 0.7], hg: [0.46, 0.4, 0.29], hI: 0.88, fog: [0.68, 0.68, 0.66], fogD: 66e-4, exp: 1, turb: 2.8, ray: 1.5, mie: 0.01, label: "день" },
+  { h: 19.5, sun: [1, 0.45, 0.19], sunI: 3.1, hs: [0.58, 0.4, 0.34], hg: [0.24, 0.17, 0.12], hI: 0.62, fog: [0.62, 0.38, 0.26], fogD: 0.0105, exp: 1.02, turb: 6.5, ray: 3.6, mie: 0.042, label: "закат" },
+  { h: 20.8, sun: [0.85, 0.3, 0.16], sunI: 0.6, hs: [0.3, 0.28, 0.42], hg: [0.11, 0.1, 0.1], hI: 0.54, fog: [0.34, 0.24, 0.28], fogD: 0.016, exp: 1.18, turb: 5, ray: 3, mie: 0.03, label: "сумерки" },
+  { h: 22, sun: [0.55, 0.64, 0.88], sunI: 0.26, hs: [0.1, 0.13, 0.22], hg: [0.035, 0.045, 0.055], hI: 0.44, fog: [0.07, 0.08, 0.12], fogD: 0.02, exp: 1.38, turb: 3, ray: 1.2, mie: 8e-3, label: "ночь" },
+  { h: 24, sun: [0.55, 0.65, 0.9], sunI: 0.34, hs: [0.05, 0.08, 0.15], hg: [0.02, 0.03, 0.035], hI: 0.42, fog: [0.022, 0.034, 0.058], fogD: 0.018, exp: 1.45, turb: 2, ray: 0.5, mie: 4e-3, label: "ночь" }
 ];
 var PHASES = [9, 13, 18.6, 19.9, 21, 23.5, 3, 5.9];
 var TIME = { h: 9, speed: 1 / 45, paused: false };
 var SKY = {
   night: 0,
-  label: "\u0434\u0435\u043D\u044C",
+  label: "день",
   sunDir: new THREE10.Vector3(),
   sunColor: new THREE10.Color(),
   sunI: 0,
@@ -5690,12 +5690,12 @@ function buildClouds() {
         vec2 uv = vP.xz / (vP.y + 0.12) * 1.6 + uWind * uT * 0.004;
         float d = fbm(uv) * 0.65 + fbm(uv * 3.1 + 7.0) * 0.35;
         float c = smoothstep(1.0 - uCover, 1.0 - uCover + 0.28, d);
-        // \u043E\u0441\u0432\u0435\u0449\u0451\u043D\u043D\u043E\u0441\u0442\u044C: \u0441\u043E\u043B\u043D\u0446\u0435 \u043F\u043E\u0434\u0441\u0432\u0435\u0447\u0438\u0432\u0430\u0435\u0442 \u043A\u0440\u0430\u044F, \u043D\u0438\u0437 \u043E\u0431\u043B\u0430\u043A\u0430 \u0442\u0435\u043C\u043D\u0435\u0435
+        // освещённость: солнце подсвечивает края, низ облака темнее
         float sunFacing = pow(max(dot(normalize(vP), normalize(uSun)), 0.0), 6.0);
         float thick = smoothstep(0.4, 0.9, d);
         vec3 col = mix(uLit * (1.0 + sunFacing * 1.6), uShade, thick * 0.65);
         float a = c * smoothstep(0.02, 0.2, vP.y) * 0.92;
-        // \u0441\u043F\u043B\u043E\u0448\u043D\u0430\u044F \u043E\u0431\u043B\u0430\u0447\u043D\u043E\u0441\u0442\u044C: \u043F\u0435\u043B\u0435\u043D\u0430 \u0431\u0435\u0437 \u043F\u0440\u043E\u0441\u0432\u0435\u0442\u043E\u0432, \u043D\u0438\u0437 \u0442\u0435\u043C\u043D\u0435\u0435
+        // сплошная облачность: пелена без просветов, низ темнее
         a = max(a, uDense * smoothstep(-0.02, 0.12, vP.y));
         col = mix(col, uShade * (0.9 + d * 0.5), uDense * (1.0 - c) * 0.8);
         gl_FragColor = vec4(col, a);
@@ -6317,7 +6317,7 @@ var WATER_FS = (
     vec3 n2 = texture2D(tNormal, uv * 0.14 - vec2(uTime * 0.009, -uTime * 0.013) * wspd).xyz * 2.0 - 1.0;
     vec3 n3 = texture2D(tNormal, uv * 0.43 + vec2(-uTime * 0.03, uTime * 0.02)).xyz * 2.0 - 1.0;
     vec2 slope = (n1.xy + n2.xy) * (0.35 + uWind * 0.5) + n3.xy * 0.12;
-    // \u043A\u043E\u043B\u044C\u0446\u0430 \u043E\u0442 \u0432\u0437\u0440\u044B\u0432\u043E\u0432 \u0438 \u043E\u0442 \u0434\u0440\u043E\u043D\u0430 \u043D\u0430\u0434 \u0432\u043E\u0434\u043E\u0439
+    // кольца от взрывов и от дрона над водой
     for (int i = 0; i < 8; i++) {
       vec4 r = uRip[i];
       float age = uTime - r.z;
@@ -6327,7 +6327,7 @@ var WATER_FS = (
       float ring = sin((dist - front) * 5.5) * exp(-abs(dist - front) * 0.9) * exp(-age * 0.7) * r.w;
       slope += (dist > 0.01 ? d / dist : vec2(0.0)) * ring * 0.9;
     }
-    // \u043A\u0430\u043F\u043B\u0438 \u0434\u043E\u0436\u0434\u044F: \u043C\u0435\u043B\u043A\u0438\u0435 \u0440\u0430\u0441\u0445\u043E\u0434\u044F\u0449\u0438\u0435\u0441\u044F \u043A\u043E\u043B\u044C\u0446\u0430 \u043F\u043E \u0432\u0441\u0435\u0439 \u0433\u043B\u0430\u0434\u0438
+    // капли дождя: мелкие расходящиеся кольца по всей глади
     if (uRain > 0.01) {
       for (int k = 0; k < 2; k++) {
         vec2 cuv = uv * (1.6 + float(k) * 1.3) + float(k) * 3.7;
@@ -6343,7 +6343,7 @@ var WATER_FS = (
     vec3 n = normalize(vec3(slope.x, 1.0, slope.y));
     vec3 V = normalize(cameraPosition - vW);
     float camDist = length(cameraPosition - vW);
-    // \u0441\u043D\u0438\u0437\u0443: \u043E\u043A\u043D\u043E \u0421\u043D\u0435\u043B\u043B\u0430 \u2014 \u043D\u0435\u0431\u043E \u0442\u043E\u043B\u044C\u043A\u043E \u0432 \u043A\u043E\u043D\u0443\u0441\u0435 \u043D\u0430\u0434 \u0433\u043E\u043B\u043E\u0432\u043E\u0439, \u0434\u0430\u043B\u044C\u0448\u0435 \u043F\u043E\u043B\u043D\u043E\u0435 \u043E\u0442\u0440\u0430\u0436\u0435\u043D\u0438\u0435 \u0442\u0451\u043C\u043D\u043E\u0439 \u0432\u043E\u0434\u044B
+    // снизу: окно Снелла — небо только в конусе над головой, дальше полное отражение тёмной воды
     if (cameraPosition.y < vW.y) {
       float up = max(dot(-V, vec3(0.0, 1.0, 0.0)), 0.0);
       float win = smoothstep(0.62, 0.8, up + slope.x * 0.08);
@@ -6357,7 +6357,7 @@ var WATER_FS = (
     float fres = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
     vec3 refl = uSky;
     if (uHasRefl > 0.5) {
-      // \u0432\u0431\u043B\u0438\u0437\u0438 \u043A\u0430\u043C\u0435\u0440\u044B \u043E\u0442\u0440\u0430\u0436\u0435\u043D\u0438\u0435 \u043F\u043E\u0447\u0442\u0438 \u043D\u0435 \u0438\u0441\u043A\u0430\u0436\u0430\u0435\u0442\u0441\u044F: \u0438\u043D\u0430\u0447\u0435 \u0443 \u0441\u0430\u043C\u043E\u0439 \u0432\u043E\u0434\u044B \xAB\u0440\u0432\u0451\u0442\xBB \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0443
+      // вблизи камеры отражение почти не искажается: иначе у самой воды «рвёт» картинку
       vec4 ruv = vRUV; ruv.xy += slope * 0.09 * ruv.w * clamp(camDist / 14.0, 0.12, 1.0);
       refl = texture2DProj(tRefl, ruv).rgb;
     }
@@ -6367,7 +6367,7 @@ var WATER_FS = (
     col += uSunCol * pow(max(dot(n, H), 0.0), 320.0) * 7.0 * step(0.0, uSunDir.y);
     vec3 Hm = normalize(uMoonDir + V);
     col += vec3(0.55, 0.65, 0.85) * pow(max(dot(n, Hm), 0.0), 420.0) * 1.6 * uNight * step(0.0, uMoonDir.y);
-    // \u043F\u0435\u043D\u0430 \u0438 \u043C\u0443\u0442\u044C \u0443 \u0441\u0430\u043C\u043E\u0433\u043E \u0431\u0435\u0440\u0435\u0433\u0430
+    // пена и муть у самого берега
     float edge = 1.0 - smoothstep(0.0, 0.22, vDepth);
     col = mix(col, uShallow * 1.6 + 0.02, edge * 0.35);
     float a = smoothstep(-0.02, 0.28, vDepth) * 0.96;
@@ -7123,7 +7123,7 @@ var GLOW_VS = (
   void main(){
     vUv = uv; vI = aI; vCol = aCol;
     vec4 c = modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-    // \u043E\u0440\u0435\u043E\u043B \u043D\u0435 \u043C\u0435\u043D\u044C\u0448\u0435 \u043F\u0430\u0440\u044B \u043F\u0438\u043A\u0441\u0435\u043B\u0435\u0439 \u0432\u0434\u0430\u043B\u0438 \u2014 \u0444\u043E\u043D\u0430\u0440\u0438 \u0432\u0438\u0434\u043D\u044B \u0441 \u0434\u0440\u043E\u043D\u0430 \u0446\u0435\u043F\u043E\u0447\u043A\u043E\u0439 \u043E\u0433\u043D\u0435\u0439
+    // ореол не меньше пары пикселей вдали — фонари видны с дрона цепочкой огней
     float dist = -c.z;
     float s = aSize * max(1.0, dist * 0.012);
     c.xy += position.xy * s;
@@ -7159,7 +7159,7 @@ var CONE_FS = (
   `
   varying float vI; varying vec3 vCol; varying float vH; varying vec3 vN; varying vec3 vV;
   void main(){
-    // \u043B\u0443\u0447 \u0432 \u0441\u044B\u0440\u043E\u043C \u0432\u043E\u0437\u0434\u0443\u0445\u0435: \u0433\u0443\u0449\u0435 \u0443 \u043F\u043B\u0430\u0444\u043E\u043D\u0430, \u043C\u044F\u0433\u043A\u0438\u0439 \u043A\u0440\u0430\u0439 \u043F\u043E \u0441\u0438\u043B\u0443\u044D\u0442\u0443
+    // луч в сыром воздухе: гуще у плафона, мягкий край по силуэту
     float edge = pow(abs(dot(normalize(vN), vV)), 1.6);
     float a = vI * edge * (1.0 - smoothstep(0.0, 1.0, vH)) * 0.14;
     gl_FragColor = vec4(vCol * a, a);
@@ -7269,7 +7269,7 @@ function finishLamps() {
     vertexShader: `attribute float aLamp; uniform float uI[${Math.max(1, n2)}]; uniform vec3 uC[${Math.max(1, n2)}];
       varying vec2 vUv; varying float vI; varying vec3 vC;
       void main(){ vUv = uv; int k = int(aLamp + 0.5); vI = uI[k]; vC = uC[k] * vec3(1.0, 0.78, 0.55);
-        // \u0432\u0431\u043B\u0438\u0437\u0438 \u043F\u044F\u0442\u043D\u043E \u0440\u0438\u0441\u0443\u0435\u0442 \u043D\u0430\u0441\u0442\u043E\u044F\u0449\u0438\u0439 \u0438\u0441\u0442\u043E\u0447\u043D\u0438\u043A \u0441\u0432\u0435\u0442\u0430, \u0434\u0435\u043A\u0430\u043B\u044C \u043D\u0443\u0436\u043D\u0430 \u0434\u043B\u044F \u0434\u0430\u043B\u044C\u043D\u0435\u0433\u043E \u043F\u043B\u0430\u043D\u0430
+        // вблизи пятно рисует настоящий источник света, декаль нужна для дальнего плана
         vI *= 0.25 + 0.75 * smoothstep(12.0, 45.0, distance(cameraPosition, position));
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `uniform sampler2D tMap; varying vec2 vUv; varying float vI; varying vec3 vC;
@@ -7384,9 +7384,9 @@ import * as THREE15 from "three";
 var BB_VS = (
   /* glsl */
   `
-  attribute vec4 aP;   // xyz, \u0440\u0430\u0437\u043C\u0435\u0440
-  attribute vec4 aC;   // rgb, \u0430\u043B\u044C\u0444\u0430
-  attribute float aR;  // \u043F\u043E\u0432\u043E\u0440\u043E\u0442
+  attribute vec4 aP;   // xyz, размер
+  attribute vec4 aC;   // rgb, альфа
+  attribute float aR;  // поворот
   attribute vec4 aX;
   uniform float uNearFade;
   varying vec4 vC; varying vec2 vUv; varying vec2 vLocal; varying vec3 vX;
@@ -7398,10 +7398,10 @@ var BB_VS = (
     vec4 mvPosition = viewMatrix * vec4(aP.xyz, 1.0);
     float c = cos(aR), s = sin(aR);
     vec2 q = vec2(position.x * c - position.y * s, position.x * s + position.y * c);
-    // \u044F\u0437\u044B\u043A\u0438 \u043F\u043B\u0430\u043C\u0435\u043D\u0438 \u0432\u044B\u0442\u044F\u043D\u0443\u0442\u044B \u0432\u0432\u0435\u0440\u0445
+    // языки пламени вытянуты вверх
     if (aX.w > 0.5) q *= vec2(0.78, 1.45);
     mvPosition.xy += q * aP.w;
-    // \u043A\u043B\u0443\u0431 \u0443 \u0441\u0430\u043C\u043E\u0439 \u043A\u0430\u043C\u0435\u0440\u044B \u0433\u0430\u0441\u043D\u0435\u0442: \u043D\u0435 \u0437\u0430\u043A\u0440\u044B\u0432\u0430\u0435\u0442 \u044D\u043A\u0440\u0430\u043D \u043F\u043B\u043E\u0441\u043A\u0438\u043C \u043F\u044F\u0442\u043D\u043E\u043C \u0438 \u043D\u0435 \u0442\u0440\u0430\u0442\u0438\u0442 \u0437\u0430\u043B\u0438\u0432\u043A\u0443
+    // клуб у самой камеры гаснет: не закрывает экран плоским пятном и не тратит заливку
     float dc = -mvPosition.z;
     vC.a *= mix(1.0, smoothstep(0.25 * aP.w, 0.9 * aP.w + 0.4, dc), uNearFade);
     gl_Position = projectionMatrix * mvPosition;
@@ -7417,14 +7417,14 @@ var BB_FS = (
   void main(){
     vec2 uv = vUv;
     if (vX.z > 0.5) {
-      // \u044F\u0437\u044B\u043A \u043F\u043B\u0430\u043C\u0435\u043D\u0438: \u043A\u043E\u043B\u044B\u0448\u0435\u0442\u0441\u044F \u0441\u0438\u043B\u044C\u043D\u0435\u0435 \u043A \u043A\u043E\u043D\u0447\u0438\u043A\u0443, \u0443 \u043A\u0430\u0436\u0434\u043E\u0433\u043E \u0441\u0432\u043E\u0439 \u0440\u0438\u0442\u043C
+      // язык пламени: колышется сильнее к кончику, у каждого свой ритм
       float k = vLocal.y * vLocal.y;
       uv.x += (sin(vLocal.y * 9.0 - uT * 11.0 + vX.x * 40.0) * 0.022 + sin(vLocal.y * 17.0 - uT * 19.0 + vX.x * 17.0) * 0.012) * k;
       uv.y -= sin(uT * 7.0 + vX.x * 23.0) * 0.012 * k;
     }
     vec4 t = texture2D(tMap, uv);
     if (vX.z > 0.5) {
-      // \u0431\u0435\u0433\u0443\u0449\u0438\u0439 \u0432\u0432\u0435\u0440\u0445 \u0448\u0443\u043C \u0440\u0432\u0451\u0442 \u043A\u0440\u0430\u0439 \u044F\u0437\u044B\u043A\u0430 \u2014 \u043D\u0435\u0442 \u0433\u043B\u0430\u0434\u043A\u043E\u0433\u043E \u0441\u0438\u043B\u0443\u044D\u0442\u0430 \xAB\u043D\u0430\u043A\u043B\u0435\u0439\u043A\u0438\xBB
+      // бегущий вверх шум рвёт край языка — нет гладкого силуэта «наклейки»
       vec2 np = vLocal * vec2(3.0, 4.0) - vec2(0.0, uT * 2.6) + vX.x * 17.0;
       vec2 i = floor(np), f = fract(np); f = f * f * (3.0 - 2.0 * f);
       float h00 = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5), h10 = fract(sin(dot(i + vec2(1, 0), vec2(127.1, 311.7))) * 43758.5);
@@ -8504,7 +8504,7 @@ function planProps() {
       if (ok) car.phi = phi + dphi;
     }
     if (!ok) {
-      console.warn("[props] \u043D\u0435\u0442 \u043C\u0435\u0441\u0442\u0430 \u043C\u0430\u0448\u0438\u043D\u0435", type, phi);
+      console.warn("[props] нет места машине", type, phi);
       car.skip = true;
       continue;
     }
@@ -9796,7 +9796,7 @@ function fireTower(t, R2) {
     return V(wx, y + ly, wz);
   };
   const hw = (h) => 2.3 - 0.95 * h / H2;
-  const S = beginStruct({ kind: "tower", name: "\u043F\u043E\u0436\u0430\u0440\u043D\u0430\u044F \u0432\u044B\u0448\u043A\u0430", x, z, rot, w: 4.6, d: 4.6, h: H2 + 3.4, fy: y, fuel: 0.3, quiet: true });
+  const S = beginStruct({ kind: "tower", name: "пожарная вышка", x, z, rot, w: 4.6, d: 4.6, h: H2 + 3.4, fy: y, fuel: 0.3, quiet: true });
   noPanel();
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const p = L(sx * 2.3, 0, sz * 2.3);
@@ -9896,7 +9896,7 @@ function waterTower(t, R2) {
   const { x, z, rot } = t, y = terrainH(x, z) - 0.05, HC = 14, HT = 3.2;
   const paint = t.paint === "camp" ? M.tankCamp : M.tankGrey;
   const c = Math.cos(rot), s = Math.sin(rot);
-  const S = beginStruct({ kind: "tower", name: "\u0432\u043E\u0434\u043E\u043A\u0430\u0447\u043A\u0430", x, z, rot, w: 5, d: 5, h: HC + HT + 1.4, fy: y, fuel: 0.1, quiet: true });
+  const S = beginStruct({ kind: "tower", name: "водокачка", x, z, rot, w: 5, d: 5, h: HC + HT + 1.4, fy: y, fuel: 0.1, quiet: true });
   noPanel();
   cyl(M.concrete, x, y + 0.3, z, 1.55, 1.5, 0.7, { seg: 20, tile: 1 });
   const base2 = panel("wall", { hp: 2.4, mode: "rigid", density: 4e3, float: 0, burnable: false });
@@ -9958,7 +9958,7 @@ function huntingStand(t, R2) {
     const [wx, wz] = F.p(lx, lz);
     return V(wx, y + ly, wz);
   };
-  const S = beginStruct({ kind: "stand", name: "\u043B\u0430\u0431\u0430\u0437", x, z, rot, w: 2.2, d: 2.2, h: PH + 2.4, fy: y, fuel: 0.8 });
+  const S = beginStruct({ kind: "stand", name: "лабаз", x, z, rot, w: 2.2, d: 2.2, h: PH + 2.4, fy: y, fuel: 0.8 });
   const poles = [];
   for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
     const pn = panel("wall", { hp: 0.9, mode: "rigid", density: 600 });
@@ -9995,7 +9995,7 @@ function bridge(b, R2) {
   const rot = Math.atan2(ux, uz), deck = MAP.WATER_Y + 0.85, n2 = Math.ceil(L / 2.5), step = L / n2;
   const g0 = hFast(ax, az) + 0.12, g1 = Math.max(hFast(bx, bz) + 0.08, deck - 0.2);
   const dy = (i) => i === 0 ? g0 : i === n2 ? Math.min(deck, g1) : deck;
-  beginStruct({ kind: "bridge", name: "\u043C\u043E\u0441\u0442", x: (ax + bx) / 2, z: (az + bz) / 2, rot, w: 1.8, d: L, h: 1.2, fy: deck, fuel: 0.6 });
+  beginStruct({ kind: "bridge", name: "мост", x: (ax + bx) / 2, z: (az + bz) / 2, rot, w: 1.8, d: L, h: 1.2, fy: deck, fuel: 0.6 });
   noPanel();
   for (let i = 1; i < n2; i++) {
     const px = ax + ux * step * i, pz = az + uz * step * i, bed = terrainH(px, pz);
@@ -10144,19 +10144,19 @@ var STREAM_FS = (
   float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
   void main(){
-    // \u0441\u0442\u0440\u0443\u0438 \u0432\u044B\u0442\u044F\u043D\u0443\u0442\u044B \u0432\u0434\u043E\u043B\u044C \u0442\u0435\u0447\u0435\u043D\u0438\u044F (\u0438\u0437\u043E\u0442\u0440\u043E\u043F\u043D\u044B\u0439 \u0448\u0443\u043C \u0447\u0438\u0442\u0430\u0435\u0442\u0441\u044F \u043A\u0430\u043A \u0433\u0440\u0430\u0432\u0438\u0439), \u043D\u0430 \u043F\u0435\u0440\u0435\u043A\u0430\u0442\u0430\u0445 \u0431\u044B\u0441\u0442\u0440\u0435\u0435
+    // струи вытянуты вдоль течения (изотропный шум читается как гравий), на перекатах быстрее
     float sp = 1.1 + vSlope * 40.0;
     vec2 q = vec2(vUv.x * 8.0, vUv.y * 0.55 - uT * sp);
     float r1 = n(q * 1.5), r2 = n(q * 3.2 + 3.1), r3 = n(vec2(vUv.x * 18.0, vUv.y * 1.4 - uT * sp * 1.6));
     vec3 nrm = normalize(vec3((r1 - 0.5) * 0.3 + (r3 - 0.5) * 0.12, 1.0, (r2 - 0.5) * 0.25));
     vec3 V = normalize(cameraPosition - vW);
     float fr = pow(1.0 - max(dot(nrm, V), 0.0), 5.0);
-    // \u0442\u043E\u0440\u0444\u044F\u043D\u0430\u044F \u0432\u043E\u0434\u0430: \u0442\u0451\u043C\u043D\u0430\u044F, \u0447\u0430\u0439 \u0441 \u0437\u0435\u043B\u0435\u043D\u044C\u044E; \u043D\u0435\u0431\u043E \u2014 \u0442\u043E\u043B\u044C\u043A\u043E \u0431\u043B\u0438\u043A\u0430\u043C\u0438 \u043F\u043E\u0434 \u043E\u0441\u0442\u0440\u044B\u043C \u0443\u0433\u043B\u043E\u043C
-    // \u0432\u044B\u0432\u043E\u0434 \u0432 \u043B\u0438\u043D\u0435\u0439\u043D\u043E\u043C \u0446\u0432\u0435\u0442\u0435: \u043D\u0435\u0431\u043E \u0432 \u0442\u0435\u043D\u0438 \u043E\u0432\u0440\u0430\u0433\u0430 \u043E\u0442\u0440\u0430\u0436\u0430\u0435\u0442\u0441\u044F \u0441\u043B\u0430\u0431\u043E
+    // торфяная вода: тёмная, чай с зеленью; небо — только бликами под острым углом
+    // вывод в линейном цвете: небо в тени оврага отражается слабо
     vec3 col = mix(uDeep * (0.8 + 0.4 * r1), uSky * 0.3, clamp(fr * 0.9, 0.0, 0.7));
     vec3 Hh = normalize(uSunDir + V);
     col += uSun * pow(max(dot(nrm, Hh), 0.0), 220.0) * 0.8;
-    // \u043F\u0435\u043D\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u043D\u0430 \u043A\u0440\u0443\u0442\u044B\u0445 \u043F\u0435\u0440\u0435\u043A\u0430\u0442\u0430\u0445, \u0443\u0437\u043A\u0438\u043C\u0438 \u0441\u0442\u0440\u0443\u044F\u043C\u0438
+    // пена только на крутых перекатах, узкими струями
     float foam = smoothstep(0.78, 0.95, r3) * smoothstep(0.012, 0.035, vSlope);
     col = mix(col, vec3(0.18, 0.19, 0.17) * (0.4 + 0.3 * length(uSky)), foam * 0.5);
     float a = mix(0.72, 0.9, fr) * (1.0 - smoothstep(0.4, 0.5, abs(vUv.x - 0.5)) * 0.75);
@@ -10275,7 +10275,7 @@ function footBridge(cv2, R2) {
   const [ux, uz] = best, rot = Math.atan2(ux, uz), L = 10;
   const e0 = [x - ux * L / 2, z - uz * L / 2], e1 = [x + ux * L / 2, z + uz * L / 2];
   const y = Math.max(hFast(...e0), hFast(...e1)) + 0.12;
-  beginStruct({ kind: "bridge", name: "\u043A\u043B\u0430\u0434\u043A\u0430", x, z, rot, w: 1.4, d: L, h: 1, fy: y, fuel: 0.5 });
+  beginStruct({ kind: "bridge", name: "кладка", x, z, rot, w: 1.4, d: L, h: 1, fy: y, fuel: 0.5 });
   panel("roof", { hp: 0.6, mode: "rigid", density: 500, float: 1.7 });
   for (const e of [-0.45, 0.45]) cyl(M.barkPine, x - uz * e, y - 0.16, z + ux * e, 0.17, 0.15, L, { seg: 8, rot: [Math.PI / 2, rot, 0] });
   for (let s = -L / 2 + 0.3; s < L / 2; s += 0.24) {
@@ -10515,9 +10515,9 @@ function planWrecks() {
     }
     return { x: best.x - best.tz * off, z: best.z + best.tx * off, rot: Math.atan2(best.tx, best.tz) };
   };
-  WRECKS.bmp = onRoad("\u0441\u0442\u0430\u0440\u0430\u044F \u0434\u043E\u0440\u043E\u0433\u0430", -59.6, -82, 1.7);
+  WRECKS.bmp = onRoad("старая дорога", -59.6, -82, 1.7);
   WRECKS.bmp.rot += 0.35;
-  WRECKS.tank = onRoad("\u0434\u043E\u0440\u043E\u0433\u0430 \u043A \u043B\u0430\u0433\u0435\u0440\u044E", ...campXZ(-26.5, 2), -1.9);
+  WRECKS.tank = onRoad("дорога к лагерю", ...campXZ(-26.5, 2), -1.9);
   WRECKS.tank.rot -= 0.3;
   keep(WRECKS.bmp.x, WRECKS.bmp.z, 4.2);
   keep(WRECKS.tank.x, WRECKS.tank.z, 4.4);
@@ -11676,7 +11676,7 @@ function checkMines() {
   if (!m) return;
   m.live = false;
   if (m.mesh) m.mesh.visible = false;
-  die(PL.mode === "drone" ? "\u0414\u0420\u041E\u041D \u0417\u0410\u0426\u0415\u041F\u0418\u041B \u0420\u0410\u0421\u0422\u042F\u0416\u041A\u0423" : "\u041F\u041E\u0414\u0420\u042B\u0412 \u041D\u0410 \u041C\u0418\u041D\u0415", "mine", m);
+  die(PL.mode === "drone" ? "ДРОН ЗАЦЕПИЛ РАСТЯЖКУ" : "ПОДРЫВ НА МИНЕ", "mine", m);
 }
 function burnPlayer(dt, heat2) {
   if (PL.mode !== "walk" || PL.dead > 0 || PL.swim) {
@@ -11687,7 +11687,7 @@ function burnPlayer(dt, heat2) {
   else PL.burn = Math.max(0, PL.burn - dt * 0.8);
   if (PL.burn > 2.4) {
     PL.burn = 0;
-    die("\u0421\u0413\u041E\u0420\u0415\u041B \u0412 \u041F\u041E\u0416\u0410\u0420\u0415", "fire");
+    die("СГОРЕЛ В ПОЖАРЕ", "fire");
   }
 }
 function blastKnock(x, y, z, size) {
@@ -11695,7 +11695,7 @@ function blastKnock(x, y, z, size) {
   const dx = PL.pos.x - x, dy = PL.pos.y + 0.9 - y, dz = PL.pos.z - z, d = Math.hypot(dx, dy, dz);
   if (PL.mode === "walk") {
     if (d < 1.9 * size) {
-      die("\u041F\u041E\u0413\u0418\u0411 \u041E\u0422 \u0420\u0410\u0417\u0420\u042B\u0412\u0410", "blast");
+      die("ПОГИБ ОТ РАЗРЫВА", "blast");
       return;
     }
     if (d < 12 * size) {
@@ -11710,7 +11710,7 @@ function blastKnock(x, y, z, size) {
     PL.vel.x += dx / d * k;
     PL.vel.y += dy / d * k;
     PL.vel.z += dz / d * k;
-    if (d < 1.6 * size) die("\u0414\u0420\u041E\u041D \u0423\u041D\u0418\u0427\u0422\u041E\u0416\u0415\u041D \u0412\u0417\u0420\u042B\u0412\u041E\u041C", "blast");
+    if (d < 1.6 * size) die("ДРОН УНИЧТОЖЕН ВЗРЫВОМ", "blast");
   }
 }
 var BOMBS = [];
@@ -11748,8 +11748,8 @@ function updateBombs(dt) {
         setTimeout(() => explode(m.x, terrainH(m.x, m.z), m.z, m.type), 120);
       }
       const d = PL.pos.distanceTo(b.p);
-      if (PL.mode === "walk" && d < 4.5) die("\u041F\u041E\u0414\u0420\u042B\u0412 \u041D\u0410 \u0421\u041E\u0411\u0421\u0422\u0412\u0415\u041D\u041D\u041E\u0419 \u0413\u0420\u0410\u041D\u0410\u0422\u0415", "self");
-      if (PL.mode === "drone" && d < 2.2) die("\u0414\u0420\u041E\u041D \u0423\u041D\u0418\u0427\u0422\u041E\u0416\u0415\u041D \u041E\u0421\u041A\u041E\u041B\u041A\u0410\u041C\u0418", "self");
+      if (PL.mode === "walk" && d < 4.5) die("ПОДРЫВ НА СОБСТВЕННОЙ ГРАНАТЕ", "self");
+      if (PL.mode === "drone" && d < 2.2) die("ДРОН УНИЧТОЖЕН ОСКОЛКАМИ", "self");
     }
   }
 }
@@ -12029,7 +12029,7 @@ function updateWalk(dt, ix, iz, boost) {
     PL.air -= dt / 25;
     if (PL.air <= 0) {
       PL.air = 1;
-      die("\u0417\u0410\u0425\u041B\u0415\u0411\u041D\u0423\u041B\u0421\u042F", "water");
+      die("ЗАХЛЕБНУЛСЯ", "water");
     }
   } else PL.air = Math.min(1, PL.air + dt / 3);
   windUniforms.uPlayer.value.copy(PL.pos);
@@ -12077,10 +12077,10 @@ function applyCamera(dt) {
 function zoneInfo() {
   const { x, z } = PL.pos;
   const e = edgeDist(x, z);
-  for (const s of Object.values(SPAWNS)) if (Math.hypot(x - s.x, z - s.z) < s.r) return { text: "\u0437\u043E\u043D\u0430 \u0432\u043E\u0437\u0440\u043E\u0436\u0434\u0435\u043D\u0438\u044F " + s.name, warn: false };
-  if (e > MAP.PLAY - 4 && e < MAP.PLAY) return { text: "\u0432\u043F\u0435\u0440\u0435\u0434\u0438 \u043C\u0438\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435", warn: true };
-  if (inMinefield(x, z)) return { text: PL.mode === "drone" ? "\u041C\u0418\u041D\u041D\u041E\u0415 \u041F\u041E\u041B\u0415 \u2014 \u0434\u0435\u0440\u0436\u0438\u0442\u0435 \u0432\u044B\u0441\u043E\u0442\u0443" : "\u041C\u0418\u041D\u041D\u041E\u0415 \u041F\u041E\u041B\u0415", warn: true };
-  if (e >= MAP.MINE1 + 0.5) return { text: "\u0437\u0430 \u043F\u0435\u0440\u0438\u043C\u0435\u0442\u0440\u043E\u043C", warn: false };
+  for (const s of Object.values(SPAWNS)) if (Math.hypot(x - s.x, z - s.z) < s.r) return { text: "зона возрождения " + s.name, warn: false };
+  if (e > MAP.PLAY - 4 && e < MAP.PLAY) return { text: "впереди минное поле", warn: true };
+  if (inMinefield(x, z)) return { text: PL.mode === "drone" ? "МИННОЕ ПОЛЕ — держите высоту" : "МИННОЕ ПОЛЕ", warn: true };
+  if (e >= MAP.MINE1 + 0.5) return { text: "за периметром", warn: false };
   return null;
 }
 
@@ -13103,19 +13103,19 @@ function updateInteract(dt, pl, keys2, sky2) {
     }
   }
   if (door) {
-    INTER.hint = door.target === 0 ? "E \u2014 \u043E\u0442\u043A\u0440\u044B\u0442\u044C \u0434\u0432\u0435\u0440\u044C" : "E \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u044C \u0434\u0432\u0435\u0440\u044C";
+    INTER.hint = door.target === 0 ? "E — открыть дверь" : "E — закрыть дверь";
     if (INTER.press) toggleDoor(door);
   } else if (wire) {
     if (keys2.KeyE) {
       INTER.cut += dt;
-      INTER.hint = "\u043F\u0435\u0440\u0435\u043A\u0443\u0441\u044B\u0432\u0430\u044E \u043F\u0440\u043E\u0432\u043E\u043B\u043E\u043A\u0443\u2026 " + Math.round(Math.min(1, INTER.cut / 1.3) * 100) + "%";
+      INTER.hint = "перекусываю проволоку… " + Math.round(Math.min(1, INTER.cut / 1.3) * 100) + "%";
       if (INTER.cut >= 1.3) {
         cutWire(wire);
         INTER.cut = 0;
       }
     } else {
       INTER.cut = 0;
-      INTER.hint = "E (\u0434\u0435\u0440\u0436\u0430\u0442\u044C) \u2014 \u043F\u0435\u0440\u0435\u043A\u0443\u0441\u0438\u0442\u044C \u043F\u0440\u043E\u0432\u043E\u043B\u043E\u043A\u0443";
+      INTER.hint = "E (держать) — перекусить проволоку";
     }
   } else INTER.cut = 0;
   INTER.press = false;
@@ -14170,7 +14170,7 @@ function planBuildings() {
     else if (it.kind === "saw") it.pad = addPad(it.x, it.z, 4.2, 2.6, it.rot, 2.5);
     else if (!it.kind.startsWith("camp")) keep(it.x, it.z, it.kind === "woodpile" ? 2 : 1.3);
     if (it.kind === "house" && pathInfluence(it.x, it.z, Math.min(it.w, it.d) * 0.3) > 0.3)
-      console.warn("[layout] \u0434\u043E\u043C \u043D\u0430 \u0442\u0440\u043E\u043F\u0435:", it.id, it.x, it.z);
+      console.warn("[layout] дом на тропе:", it.id, it.x, it.z);
   }
 }
 function buildBuildings() {
@@ -14247,29 +14247,29 @@ var Grade = {
     float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
-      // \u043F\u043E\u0434 \u0432\u043E\u0434\u043E\u0439: \u043A\u043E\u043B\u044B\u0448\u0443\u0449\u0430\u044F\u0441\u044F \u043A\u0430\u0440\u0442\u0438\u043D\u043A\u0430
+      // под водой: колышущаяся картинка
       if (uUnder > 0.0) uv += vec2(sin(vUv.y * 24.0 + uT * 2.1), cos(vUv.x * 21.0 + uT * 1.7)) * 0.0025 * uUnder;
       vec4 c = texture2D(tDiffuse, uv);
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       c.rgb = mix(vec3(l), c.rgb, uSat);
-      // \u043D\u043E\u0447\u043D\u043E\u0435 \u0437\u0440\u0435\u043D\u0438\u0435: \u0445\u043E\u043B\u043E\u0434\u043D\u0435\u0435 \u0438 \u0431\u0435\u0434\u043D\u0435\u0435 \u0446\u0432\u0435\u0442\u043E\u043C, \u043D\u043E \u0442\u0451\u043F\u043B\u044B\u0435 \u043E\u0433\u043D\u0438 \u043E\u0441\u0442\u0430\u044E\u0442\u0441\u044F \u0442\u0451\u043F\u043B\u044B\u043C\u0438
+      // ночное зрение: холоднее и беднее цветом, но тёплые огни остаются тёплыми
       vec3 scot = vec3(l * 0.78, l * 0.92, l * 1.2);
       float keep = smoothstep(0.25, 0.9, l);
       c.rgb = mix(c.rgb, scot, uNight * 0.55 * (1.0 - keep));
-      // \u043B\u0451\u0433\u043A\u0438\u0439 \xAB\u043F\u043B\u0451\u043D\u043E\u0447\u043D\u044B\u0439\xBB \u0442\u043E\u043D: \u0442\u0435\u043D\u0438 \u0432 \u0437\u0435\u043B\u0435\u043D\u044C, \u0441\u0432\u0435\u0442\u0430 \u0432 \u0442\u0435\u043F\u043B\u043E
+      // лёгкий «плёночный» тон: тени в зелень, света в тепло
       c.rgb += vec3(-0.004, 0.003, -0.002) * (1.0 - l) + vec3(0.012, 0.006, -0.01) * l * uWarm;
       vec2 d = vUv - 0.5;
       c.rgb *= clamp(1.0 - dot(d, d) * uVig * 3.0, 0.0, 1.0);
       c.rgb += (h(vUv * 1000.0 + uT) - 0.5) * (0.018 + uNight * 0.02);
-      // \u043A\u043E\u043D\u0442\u0443\u0437\u0438\u044F: \u043A\u0440\u0430\u0441\u043D\u044B\u0439 \u043A\u0440\u0430\u0439 \u0438 \u0441\u043C\u0430\u0437
+      // контузия: красный край и смаз
       c.rgb = mix(c.rgb, c.rgb * vec3(1.2, 0.55, 0.5), uHit * smoothstep(0.1, 0.7, length(d) * 1.4));
-      // \u043F\u043E\u0434 \u0432\u043E\u0434\u043E\u0439: \u0442\u043E\u0440\u0444\u044F\u043D\u0430\u044F \u043C\u0443\u0442\u044C, \u0442\u0451\u043C\u043D\u044B\u0435 \u043A\u0440\u0430\u044F
+      // под водой: торфяная муть, тёмные края
       if (uUnder > 0.0) {
         float lu = dot(c.rgb, vec3(0.3, 0.55, 0.15));
         c.rgb = mix(c.rgb, vec3(lu * 0.55, lu * 0.8, lu * 0.62) + vec3(0.0, 0.012, 0.01), 0.65 * uUnder);
         c.rgb *= 1.0 - dot(d, d) * 1.6 * uUnder;
       }
-      // \u0432\u0441\u043F\u044B\u0448\u043A\u0430 \u043C\u043E\u043B\u043D\u0438\u0438: \u0445\u043E\u043B\u043E\u0434\u043D\u044B\u0439 \u0437\u0430\u0441\u0432\u0435\u0442 \u043A\u0430\u0434\u0440\u0430
+      // вспышка молнии: холодный засвет кадра
       c.rgb += vec3(0.5, 0.55, 0.7) * uFlash * 0.06 + c.rgb * uFlash * 0.25;
       gl_FragColor = c;
     }`
@@ -14415,12 +14415,12 @@ function buildMapOverlay() {
   }
   x.fillStyle = "rgba(210,90,70,.9)";
   x.font = "bold 10px system-ui";
-  x.fillText("\u041C\u0418\u041D\u041D\u041E\u0415 \u041F\u041E\u041B\u0415", MS / 2, a0 + 11);
-  x.fillText("\u041C\u0418\u041D\u041D\u041E\u0415 \u041F\u041E\u041B\u0415", MS / 2, MS - a0 - 5);
+  x.fillText("МИННОЕ ПОЛЕ", MS / 2, a0 + 11);
+  x.fillText("МИННОЕ ПОЛЕ", MS / 2, MS - a0 - 5);
   x.fillStyle = "#9aa69c";
   x.font = "10px system-ui";
   x.textAlign = "left";
-  x.fillText("N \u2191   \u0441\u0435\u0442\u043A\u0430 50 \u043C", 8, MS - 8);
+  x.fillText("N ↑   сетка 50 м", 8, MS - 8);
   x.strokeStyle = "rgba(255,255,255,.05)";
   x.lineWidth = 1;
   for (let g = -100; g <= 100; g += 50) {
@@ -14454,7 +14454,7 @@ function drawMap() {
   x.fill();
   x.restore();
 }
-var DIRS = ["\u0421", "\u0421\u0412", "\u0412", "\u042E\u0412", "\u042E", "\u042E\u0417", "\u0417", "\u0421\u0417"];
+var DIRS = ["С", "СВ", "В", "ЮВ", "Ю", "ЮЗ", "З", "СЗ"];
 function updateHud(dt) {
   if (toastT > 0) {
     toastT -= dt;
@@ -14462,11 +14462,11 @@ function updateHud(dt) {
   }
   const cl = $("#clock");
   cl.firstElementChild.textContent = fmtTime(TIME.h);
-  cl.lastElementChild.textContent = SKY.label + (TIME.paused ? " \xB7 \u043F\u0430\u0443\u0437\u0430" : "");
+  cl.lastElementChild.textContent = SKY.label + (TIME.paused ? " · пауза" : "");
   const heading = (-PL.yaw * 180 / Math.PI % 360 + 360) % 360;
   const spd = Math.hypot(PL.vel.x, PL.vel.y, PL.vel.z) * 3.6;
   const osd = $("#osd");
-  osd.innerHTML = PL.mode === "drone" ? `<b>${PL.cine ? "\u041E\u0411\u041B\u0401\u0422" : "\u0414\u0420\u041E\u041D"}</b>${PL.under ? " \xB7 \u041F\u041E\u0414 \u0412\u041E\u0414\u041E\u0419" : ""} \xB7 ALT ${PL.agl.toFixed(1)} \u043C \xB7 ${spd.toFixed(0)} \u043A\u043C/\u0447 \xB7 ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}\xB0<br><span>\u0441\u043A\u043E\u0440\u043E\u0441\u0442\u044C ${PL.speed.toFixed(0)} \u043C/\u0441 \xB7 ${PL.team === "A" ? "ALPHA" : "DELTA"}</span>` : `<b>\u041F\u0415\u0428\u041A\u041E\u041C</b> \xB7 ${spd.toFixed(1)} \u043A\u043C/\u0447 \xB7 ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}\xB0${PL.swim ? PL.under ? " \xB7 \u043F\u043E\u0434 \u0432\u043E\u0434\u043E\u0439" : " \xB7 \u0432\u043F\u043B\u0430\u0432\u044C" : ""}${PL.air < 0.999 ? ` \xB7 \u0432\u043E\u0437\u0434\u0443\u0445 <b style="color:${PL.air < 0.3 ? "#ff7a5c" : "#cfe"}">${Math.round(PL.air * 100)}%</b>` : ""}${PL.burn > 0.2 ? ' \xB7 <b style="color:#ff9a5c">\u041E\u0413\u041E\u041D\u042C</b>' : ""}<br><span>${PL.team === "A" ? "ALPHA" : "DELTA"}</span>`;
+  osd.innerHTML = PL.mode === "drone" ? `<b>${PL.cine ? "ОБЛЁТ" : "ДРОН"}</b>${PL.under ? " · ПОД ВОДОЙ" : ""} · ALT ${PL.agl.toFixed(1)} м · ${spd.toFixed(0)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°<br><span>скорость ${PL.speed.toFixed(0)} м/с · ${PL.team === "A" ? "ALPHA" : "DELTA"}</span>` : `<b>ПЕШКОМ</b> · ${spd.toFixed(1)} км/ч · ${DIRS[Math.round(heading / 45) % 8]} ${heading.toFixed(0)}°${PL.swim ? PL.under ? " · под водой" : " · вплавь" : ""}${PL.air < 0.999 ? ` · воздух <b style="color:${PL.air < 0.3 ? "#ff7a5c" : "#cfe"}">${Math.round(PL.air * 100)}%</b>` : ""}${PL.burn > 0.2 ? ' · <b style="color:#ff9a5c">ОГОНЬ</b>' : ""}<br><span>${PL.team === "A" ? "ALPHA" : "DELTA"}</span>`;
   const z = zoneInfo(), zel = $("#zone");
   zel.textContent = z ? z.text : "";
   zel.className = z && z.warn ? "warn" : "";
@@ -14474,7 +14474,7 @@ function updateHud(dt) {
   if (PL.dead > 0) {
     dead.classList.add("on");
     dead.firstElementChild.textContent = PL.deathMsg;
-    dead.lastElementChild.textContent = "\u0432\u043E\u0437\u0440\u043E\u0436\u0434\u0435\u043D\u0438\u0435 \u043D\u0430 \u0431\u0430\u0437\u0435 " + (PL.team === "A" ? "ALPHA" : "DELTA") + " \u0447\u0435\u0440\u0435\u0437 " + Math.ceil(PL.dead) + " \u0441";
+    dead.lastElementChild.textContent = "возрождение на базе " + (PL.team === "A" ? "ALPHA" : "DELTA") + " через " + Math.ceil(PL.dead) + " с";
     dead.style.background = `rgba(10,4,3,${lerp(0.25, 0.9, Math.min(1, (3.2 - PL.dead) / 1.2))})`;
   } else dead.classList.remove("on");
   if ($("#map").classList.contains("on")) drawMap();
@@ -14612,7 +14612,7 @@ function buildBirds() {
   const mat = new THREE33.MeshStandardMaterial({ color: 1315862, roughness: 0.75, metalness: 0.1, side: THREE33.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = "attribute float aWing;\nattribute float aFlap;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
-      // \u0432\u0437\u043C\u0430\u0445: \u043A\u0440\u044B\u043B\u043E \u043F\u043E\u0432\u043E\u0440\u0430\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044F \u0432\u043E\u043A\u0440\u0443\u0433 \u043F\u043B\u0435\u0447\u0430, \u043A\u043E\u043D\u0447\u0438\u043A \u043E\u0442\u0441\u0442\u0430\u0451\u0442
+      // взмах: крыло поворачивается вокруг плеча, кончик отстаёт
       float fl = sin(aFlap), fl2 = sin(aFlap - 0.6);
       transformed.y += aWing * 0.34 * mix(fl, fl2, aWing) * step(0.001, aWing + 0.0) ;
       transformed.x *= 1.0 - 0.18 * abs(fl) * aWing;`);
@@ -14898,9 +14898,9 @@ var locked = false;
 var searchlight = null;
 var draws = 0;
 var STEPS = [
-  ["\u0424\u0438\u0437\u0438\u043A\u0430: ammo.js", () => initPhysics()],
-  ["\u0422\u0435\u043A\u0441\u0442\u0443\u0440\u044B \u0438 \u043C\u0430\u0442\u0435\u0440\u0438\u0430\u043B\u044B", () => buildMaterials()],
-  ["\u041F\u043B\u0430\u043D \u043A\u0430\u0440\u0442\u044B", () => {
+  ["Физика: ammo.js", () => initPhysics()],
+  ["Текстуры и материалы", () => buildMaterials()],
+  ["План карты", () => {
     planBuildings();
     planMilitary();
     planPiers();
@@ -14909,34 +14909,34 @@ var STEPS = [
     planLandmarks();
     planWrecks();
   }],
-  ["\u0420\u0435\u043B\u044C\u0435\u0444: \u043A\u044D\u0448 \u0432\u044B\u0441\u043E\u0442", () => buildHeightCache()],
-  ["\u0420\u0435\u043B\u044C\u0435\u0444: \u0441\u0435\u0442\u043A\u0430", () => buildTerrain()],
-  ["\u041D\u0435\u0431\u043E \u0438 \u0441\u0432\u0435\u0442", () => buildSky()],
-  ["\u0425\u0432\u043E\u0439\u043D\u044B\u0439 \u043B\u0435\u0441", () => buildForest()],
-  ["\u041F\u043E\u0434\u043B\u0435\u0441\u043E\u043A \u0438 \u0442\u0440\u0430\u0432\u0430", () => {
+  ["Рельеф: кэш высот", () => buildHeightCache()],
+  ["Рельеф: сетка", () => buildTerrain()],
+  ["Небо и свет", () => buildSky()],
+  ["Хвойный лес", () => buildForest()],
+  ["Подлесок и трава", () => {
     buildUndergrowth();
     buildGrass();
   }],
-  ["\u041E\u0437\u0435\u0440\u043E, \u043A\u0430\u043C\u044B\u0448, \u043C\u043E\u0441\u0442\u043A\u0438", () => buildLake()],
-  ["\u0422\u0443\u0440\u0431\u0430\u0437\u0430 \u0438 \u043A\u043E\u0440\u0434\u043E\u043D", () => buildBuildings()],
-  ["\u041E\u043A\u043E\u043F\u044B, \u0431\u0430\u0437\u044B, \u043C\u0438\u043D\u043D\u043E\u0435 \u043F\u043E\u043B\u0435", () => buildMilitary()],
-  ["\u0412\u044B\u0448\u043A\u0438, \u043C\u043E\u0441\u0442, \u0440\u0443\u0447\u044C\u0438, \u0431\u043E\u043B\u043E\u0442\u043E", () => buildLandmarks()],
-  ["\u0421\u043B\u0435\u0434\u044B \u0444\u0440\u043E\u043D\u0442\u0430", () => buildWrecks()],
-  ["\u0422\u0435\u0445\u043D\u0438\u043A\u0430 \u0438 \u0443\u043A\u0440\u044B\u0442\u0438\u044F", () => {
+  ["Озеро, камыш, мостки", () => buildLake()],
+  ["Турбаза и кордон", () => buildBuildings()],
+  ["Окопы, базы, минное поле", () => buildMilitary()],
+  ["Вышки, мост, ручьи, болото", () => buildLandmarks()],
+  ["Следы фронта", () => buildWrecks()],
+  ["Техника и укрытия", () => {
     buildProps();
     buildGlass();
   }],
-  ["\u0424\u0438\u0437\u0438\u043A\u0430: \u0441\u0442\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0439 \u043C\u0438\u0440", () => {
+  ["Физика: статический мир", () => {
     const g = heightGrid();
     buildStaticWorld(g.H, g.HN, g.HS, g.R);
     buildPlayerProxy();
     setPhysCamera(camera);
   }],
-  ["\u0424\u043E\u043D\u0430\u0440\u0438", () => {
+  ["Фонари", () => {
     buildLamps();
     finishLamps();
   }],
-  ["\u0427\u0430\u0441\u0442\u0438\u0446\u044B \u0438 \u0432\u0437\u0440\u044B\u0432\u044B", () => {
+  ["Частицы и взрывы", () => {
     buildParticles();
     buildExplosions();
     buildDestruction();
@@ -14945,18 +14945,18 @@ var STEPS = [
     buildInteract();
     buildBirds();
   }],
-  ["\u041E\u0433\u043E\u043D\u044C \u0438 \u043F\u043E\u0433\u043E\u0434\u0430", () => {
+  ["Огонь и погода", () => {
     buildFire();
     for (const q of LANDMARKS.scorch) if (q) scorch(q.x, q.z, Math.round(q.r), 0.9);
     buildWeather();
   }],
-  ["\u0421\u0431\u043E\u0440\u043A\u0430 \u0433\u0435\u043E\u043C\u0435\u0442\u0440\u0438\u0438", () => {
+  ["Сборка геометрии", () => {
     draws = flushStatic();
     buildPost2();
     buildMapOverlay();
     collectWetMaterials(/* @__PURE__ */ new Set([TERRAIN.mat]));
   }],
-  ["\u041A\u043E\u043C\u043F\u0438\u043B\u044F\u0446\u0438\u044F \u0448\u0435\u0439\u0434\u0435\u0440\u043E\u0432", () => {
+  ["Компиляция шейдеров", () => {
     spawnAt("A", "drone");
     updatePlayer(0);
     updateSky(0);
@@ -14970,14 +14970,14 @@ async function build() {
   const t0 = performance.now();
   for (let i = 0; i < STEPS.length; i++) {
     const [name, fn] = STEPS[i];
-    stage.textContent = name + "\u2026";
+    stage.textContent = name + "…";
     bar.style.width = (i / STEPS.length * 100).toFixed(0) + "%";
     await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
     const ts = performance.now();
     await fn();
-    console.info(`[build] ${name}: ${(performance.now() - ts).toFixed(0)} \u043C\u0441`);
+    console.info(`[build] ${name}: ${(performance.now() - ts).toFixed(0)} мс`);
   }
-  console.info(`[build] \u0432\u0441\u0435\u0433\u043E ${(performance.now() - t0).toFixed(0)} \u043C\u0441`);
+  console.info(`[build] всего ${(performance.now() - t0).toFixed(0)} мс`);
   bar.style.width = "100%";
   finish();
 }
@@ -14987,7 +14987,7 @@ function finish() {
   searchlight.target.position.set(0, -0.35, -1);
   camera.add(searchlight, searchlight.target);
   TIME.h = 9;
-  $("#help").textContent = "\u041C\u044B\u0448\u044C \u2014 \u043E\u0431\u0437\u043E\u0440 \xB7 WASD \u2014 \u043F\u043E\u043B\u0451\u0442/\u0445\u043E\u0434\u044C\u0431\u0430 \xB7 Space/E \u0432\u0432\u0435\u0440\u0445 \xB7 C/Q \u0432\u043D\u0438\u0437 \xB7 Shift \u0431\u044B\u0441\u0442\u0440\u0435\u0435 \xB7 \u043A\u043E\u043B\u0435\u0441\u043E \u2014 \u0441\u043A\u043E\u0440\u043E\u0441\u0442\u044C \u0434\u0440\u043E\u043D\u0430\n\u041B\u041A\u041C \u2014 \u0441\u0431\u0440\u043E\u0441 \u0433\u0440\u0430\u043D\u0430\u0442\u044B / \u0431\u0440\u043E\u0441\u043E\u043A \xB7 G \u2014 \u0434\u0440\u043E\u043D \u21C4 \u043F\u0435\u0448\u043A\u043E\u043C \xB7 F \u2014 \u043F\u0440\u043E\u0436\u0435\u043A\u0442\u043E\u0440 \xB7 M \u2014 \u043A\u0430\u0440\u0442\u0430 \xB7 P \u2014 \u043E\u0431\u043B\u0451\u0442 \xB7 R \u2014 \u043D\u0430 \u0431\u0430\u0437\u0443\n\u041F\u0435\u0448\u043A\u043E\u043C: E \u2014 \u0434\u0432\u0435\u0440\u044C, \u0434\u0435\u0440\u0436\u0430\u0442\u044C E \u0443 \u043A\u043E\u043B\u044E\u0447\u043A\u0438 \u2014 \u043F\u0435\u0440\u0435\u043A\u0443\u0441\u0438\u0442\u044C, W \u0443 \u043B\u0435\u0441\u0442\u043D\u0438\u0446\u044B \u2014 \u043B\u0435\u0437\u0442\u044C (Space \u2014 \u0441\u043F\u0440\u044B\u0433\u043D\u0443\u0442\u044C)\n\u041F\u041A\u041C \u2014 \u0432\u044B\u0441\u0442\u0440\u0435\u043B \xB7 B \u2014 \u0430\u0440\u0442\u043D\u0430\u043B\u0451\u0442 \u043F\u043E \u0442\u043E\u0447\u043A\u0435 \u043F\u0440\u0438\u0446\u0435\u043B\u0430 \xB7 K \u2014 \u043F\u043E\u0433\u043E\u0434\u0430 \xB7 J \u2014 \u043C\u043E\u043B\u043D\u0438\u044F\nN \u2014 \u0444\u0430\u0437\u0430 \u0441\u0443\u0442\u043E\u043A \xB7 T \u2014 \u043F\u0430\u0443\u0437\u0430 \xB7 [ ] \u2014 \u0441\u043A\u043E\u0440\u043E\u0441\u0442\u044C \u0432\u0440\u0435\u043C\u0435\u043D\u0438 \xB7 1..4 \u2014 \u0443\u0442\u0440\u043E/\u0434\u0435\u043D\u044C/\u0437\u0430\u043A\u0430\u0442/\u043D\u043E\u0447\u044C \xB7 U \u2014 \u0437\u0432\u0443\u043A \xB7 V \u2014 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441";
+  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор · M — карта · P — облёт · R — на базу\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
   BLAST.hooks.push((x, y, z, size) => scareBirds(x, y, z, 70 + 45 * size, 1));
   WEATHER.onStrike = (x, y, z, dist) => {
     thunder(dist);
@@ -15009,26 +15009,26 @@ function finish() {
       if (!c.car) continue;
       for (const [x, z] of boxPts(c)) {
         if (trenchDist(x, z) < TW.cap) {
-          out.push(["\u043C\u0430\u0448\u0438\u043D\u0430 \u0432 \u043E\u043A\u043E\u043F\u0435", c.car, x.toFixed(1), z.toFixed(1)]);
+          out.push(["машина в окопе", c.car, x.toFixed(1), z.toFixed(1)]);
           break;
         }
         if (houses.some((h) => {
           const dx = x - h.x, dz = z - h.z;
           return Math.abs(dx * h.c - dz * h.s) < h.hw + 0.3 && Math.abs(dx * h.s + dz * h.c) < h.hd + 0.3;
         })) {
-          out.push(["\u043C\u0430\u0448\u0438\u043D\u0430 \u0432 \u0434\u043E\u043C\u0435", c.car, x.toFixed(1), z.toFixed(1)]);
+          out.push(["машина в доме", c.car, x.toFixed(1), z.toFixed(1)]);
           break;
         }
       }
     }
     for (const s of STRUCTS) {
       if (!s.center || s.kind === "fence" || s.kind === "bench" || s.kind === "sandbags" || s.kind === "wire") continue;
-      if (trenchDist(s.center.x, s.center.z) < TW.cap + Math.min(s.w ?? 1, s.d ?? 1) / 2) out.push(["\u043F\u043E\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u0432 \u043E\u043A\u043E\u043F\u0435", s.kind, s.name || "", s.center.x.toFixed(1), s.center.z.toFixed(1)]);
+      if (trenchDist(s.center.x, s.center.z) < TW.cap + Math.min(s.w ?? 1, s.d ?? 1) / 2) out.push(["постройка в окопе", s.kind, s.name || "", s.center.x.toFixed(1), s.center.z.toFixed(1)]);
     }
     for (const t of TREES) for (const s of STRUCTS) {
       if (s.kind !== "house" || t.broken) continue;
       const dx = t.x - s.x, dz = t.z - s.z, c = Math.cos(s.rot), n2 = Math.sin(s.rot);
-      if (Math.abs(dx * c - dz * n2) < s.w / 2 + 0.2 && Math.abs(dx * n2 + dz * c) < s.d / 2 + 0.2) out.push(["\u0434\u0435\u0440\u0435\u0432\u043E \u0432 \u0434\u043E\u043C\u0435", s.name, t.x.toFixed(1), t.z.toFixed(1)]);
+      if (Math.abs(dx * c - dz * n2) < s.w / 2 + 0.2 && Math.abs(dx * n2 + dz * c) < s.d / 2 + 0.2) out.push(["дерево в доме", s.name, t.x.toFixed(1), t.z.toFixed(1)]);
     }
     return out;
   };
@@ -15197,17 +15197,17 @@ addEventListener("keydown", (e) => {
   if (!window.MAP_READY) return;
   if (PL.cine && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyG"].includes(e.code)) {
     stopCinematic();
-    toast("\u043E\u0431\u043B\u0451\u0442 \u043F\u0440\u0435\u0440\u0432\u0430\u043D \u2014 \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u0435 \u0432\u0430\u0448\u0435");
+    toast("облёт прерван — управление ваше");
   }
   if (e.code === "KeyE" && !e.repeat && PL.mode === "walk") INTER.press = true;
   switch (e.code) {
     case "KeyG":
       setMode(PL.mode === "drone" ? "walk" : "drone");
-      toast(PL.mode === "drone" ? "\u0434\u0440\u043E\u043D" : "\u043F\u0435\u0448\u043A\u043E\u043C");
+      toast(PL.mode === "drone" ? "дрон" : "пешком");
       break;
     case "KeyF":
       PL.light = !PL.light;
-      toast("\u043F\u0440\u043E\u0436\u0435\u043A\u0442\u043E\u0440: " + (PL.light ? "\u0432\u043A\u043B" : "\u0432\u044B\u043A\u043B"));
+      toast("прожектор: " + (PL.light ? "вкл" : "выкл"));
       break;
     case "KeyM":
       $("#map").classList.toggle("on");
@@ -15216,59 +15216,59 @@ addEventListener("keydown", (e) => {
       if (PL.cine) stopCinematic();
       else {
         startCinematic();
-        toast("\u043E\u0431\u043B\u0451\u0442 \u043A\u0430\u0440\u0442\u044B \xB7 WASD \u2014 \u043F\u0440\u0435\u0440\u0432\u0430\u0442\u044C");
+        toast("облёт карты · WASD — прервать");
       }
       break;
     case "KeyR":
       spawnAt(PL.team, PL.mode);
-      toast("\u043D\u0430 \u0431\u0430\u0437\u0443 " + (PL.team === "A" ? "ALPHA" : "DELTA"));
+      toast("на базу " + (PL.team === "A" ? "ALPHA" : "DELTA"));
       break;
     case "KeyN":
       nextPhase();
       updateSky(0);
-      toast(fmtTime(TIME.h) + " \xB7 " + SKY.label);
+      toast(fmtTime(TIME.h) + " · " + SKY.label);
       break;
     case "KeyT":
       TIME.paused = !TIME.paused;
-      toast(TIME.paused ? "\u0432\u0440\u0435\u043C\u044F \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E" : "\u0432\u0440\u0435\u043C\u044F \u0438\u0434\u0451\u0442");
+      toast(TIME.paused ? "время остановлено" : "время идёт");
       break;
     case "BracketLeft":
       TIME.speed = Math.max(1 / 900, TIME.speed / 2);
-      toast("\u0441\u043A\u043E\u0440\u043E\u0441\u0442\u044C \u0432\u0440\u0435\u043C\u0435\u043D\u0438 \xD7" + (TIME.speed * 45).toFixed(2));
+      toast("скорость времени ×" + (TIME.speed * 45).toFixed(2));
       break;
     case "BracketRight":
       TIME.speed = Math.min(2, TIME.speed * 2);
-      toast("\u0441\u043A\u043E\u0440\u043E\u0441\u0442\u044C \u0432\u0440\u0435\u043C\u0435\u043D\u0438 \xD7" + (TIME.speed * 45).toFixed(2));
+      toast("скорость времени ×" + (TIME.speed * 45).toFixed(2));
       break;
     case "Digit1":
       TIME.h = 7.2;
-      toast("\u0443\u0442\u0440\u043E");
+      toast("утро");
       break;
     case "Digit2":
       TIME.h = 13;
-      toast("\u0434\u0435\u043D\u044C");
+      toast("день");
       break;
     case "Digit3":
       TIME.h = 19.7;
-      toast("\u0437\u0430\u043A\u0430\u0442");
+      toast("закат");
       break;
     case "Digit4":
       TIME.h = 23.3;
-      toast("\u043D\u043E\u0447\u044C");
+      toast("ночь");
       break;
     case "KeyK":
-      toast("\u043F\u043E\u0433\u043E\u0434\u0430: " + cycleWeather());
+      toast("погода: " + cycleWeather());
       WEATHER.auto = false;
       break;
     case "KeyJ":
       strikeNow();
       break;
     case "KeyB":
-      toast(artillery2(aimPoint()) ? "\u0430\u0440\u0442\u043D\u0430\u043B\u0451\u0442 \u043F\u043E \u0442\u043E\u0447\u043A\u0435 \u043F\u0440\u0438\u0446\u0435\u043B\u0430" : "\u043D\u0435\u0442 \u0446\u0435\u043B\u0438");
+      toast(artillery2(aimPoint()) ? "артналёт по точке прицела" : "нет цели");
       break;
     case "KeyU":
       AUDIO.on = !AUDIO.on;
-      toast("\u0437\u0432\u0443\u043A: " + (AUDIO.on ? "\u0432\u043A\u043B" : "\u0432\u044B\u043A\u043B"));
+      toast("звук: " + (AUDIO.on ? "вкл" : "выкл"));
       break;
     case "KeyV":
       $("#hud").classList.toggle("clean");
@@ -15441,11 +15441,11 @@ function loop() {
     const el = $("#fps");
     if (el.style.display === "block") {
       const s = window.MAP_API.stats();
-      el.textContent = `${(fpsN / fpsAcc).toFixed(0)} fps \xB7 ${QNAME} \xB7 \u0440\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u0438\u0435 \xD7${PERF.pr.toFixed(2)}
-${s.calls} \u0432\u044B\u0437\u043E\u0432\u043E\u0432 \xB7 ${(s.tris / 1e3).toFixed(0)}k \u0442\u0440\u0435\u0443\u0433.
-\u0434\u0435\u0440\u0435\u0432\u044C\u044F ${s.trees} (\u0434\u0435\u0442\u0430\u043B\u044C\u043D\u044B\u0445 ${s.hi}) \xB7 \u0442\u0440\u0430\u0432\u0430 ${s.grass}
-\u0444\u043E\u043D\u0430\u0440\u0438 ${s.working}/${s.lamps} \xB7 \u043C\u0438\u043D\u044B ${s.mines}
-${PL.pos.x.toFixed(1)}, ${PL.pos.y.toFixed(1)}, ${PL.pos.z.toFixed(1)} \xB7 ${fmtTime(TIME.h)}`;
+      el.textContent = `${(fpsN / fpsAcc).toFixed(0)} fps · ${QNAME} · разрешение ×${PERF.pr.toFixed(2)}
+${s.calls} вызовов · ${(s.tris / 1e3).toFixed(0)}k треуг.
+деревья ${s.trees} (детальных ${s.hi}) · трава ${s.grass}
+фонари ${s.working}/${s.lamps} · мины ${s.mines}
+${PL.pos.x.toFixed(1)}, ${PL.pos.y.toFixed(1)}, ${PL.pos.z.toFixed(1)} · ${fmtTime(TIME.h)}`;
     }
     fpsAcc = 0;
     fpsN = 0;
@@ -15455,7 +15455,7 @@ ${PL.pos.x.toFixed(1)}, ${PL.pos.y.toFixed(1)}, ${PL.pos.z.toFixed(1)} \xB7 ${fm
 build().catch((err) => {
   console.error(err);
   window.MAP_ERROR = String(err && err.stack || err);
-  $("#g_load").innerHTML = '<p style="color:#d9736b">\u041E\u0448\u0438\u0431\u043A\u0430 \u0441\u0431\u043E\u0440\u043A\u0438: ' + String(err && err.message || err) + "</p>";
+  $("#g_load").innerHTML = '<p style="color:#d9736b">Ошибка сборки: ' + String(err && err.message || err) + "</p>";
 });
 
 </script>
