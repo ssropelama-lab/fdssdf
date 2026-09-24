@@ -93,6 +93,7 @@
       <div><b>E</b>дверь / колючка</div><div><b>W у лестницы</b>лезть</div><div><b>M</b>карта</div><div><b>P</b>облёт</div><div><b>R</b>на базу</div>
       <div><b>N</b>фаза суток</div><div><b>1..4</b>утро…ночь</div><div><b>T · [ ]</b>время</div>
       <div><b>X</b>перезарядка</div><div><b>U</b>звук</div><div><b>V</b>интерфейс</div><div><b>Esc</b>пауза</div>
+      <div><b>E у пулемёта</b>встать за M2</div><div><b>ЛКМ / ПКМ</b>огонь / прицел</div><div><b>L в будке</b>прожектор вышки</div><div><b>F3</b>GPU/CPU</div>
     </div>
     <button class="go" id="g_go">Взлететь</button><button class="go alt" id="g_cine">Облёт карты</button>
   </div>
@@ -1234,6 +1235,20 @@ renderer.toneMapping = THREE.AgXToneMapping;
 renderer.toneMappingExposure = 1;
 document.body.appendChild(renderer.domElement);
 var scene = new THREE.Scene();
+// туман по высоте: в низинах гуще, у верхушек чище. Высота точки — из вида (cameraPosition и viewMatrix есть во всех шейдерах)
+THREE.ShaderChunk.fog_pars_vertex = "#ifdef USE_FOG\n varying float vFogDepth; varying float vFogY;\n#endif\n";
+THREE.ShaderChunk.fog_vertex = "#ifdef USE_FOG\n vFogDepth = - mvPosition.z; vFogY = cameraPosition.y + dot(mat3(viewMatrix)[1], mvPosition.xyz);\n#endif\n";
+THREE.ShaderChunk.fog_pars_fragment = "#ifdef USE_FOG\n uniform vec3 fogColor; varying float vFogDepth; varying float vFogY;\n #ifdef FOG_EXP2\n  uniform float fogDensity;\n #else\n  uniform float fogNear; uniform float fogFar;\n #endif\n#endif\n";
+THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
+ #ifdef FOG_EXP2
+  float fhA = clamp(exp(-(cameraPosition.y - 1.5) / 13.0), 0.3, 1.7), fhB = clamp(exp(-(vFogY - 1.5) / 13.0), 0.3, 1.7);
+  float fogFactor = 1.0 - exp(- fogDensity * fogDensity * vFogDepth * vFogDepth * (fhA + fhB) * 0.5);
+ #else
+  float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );
+ #endif
+ gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+#endif
+`;
 var camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.06, 1400);
 camera.rotation.order = "YXZ";
 scene.add(camera);
@@ -2623,11 +2638,12 @@ function birchAtlas() {
 function grassTex() {
   const W = TS(128), H2 = TS(256), [c, x] = cv(W, H2);
   for (let k = 0; k < 9; k++) {
-    const bx = W * sr(0.08, 0.92), bw = W * sr(0.025, 0.05), bh = H2 * sr(0.45, 0.98);
+    // листья уже, цвет приглушён: без кислотного лайма
+    const bx = W * sr(0.08, 0.92), bw = W * sr(0.015, 0.032), bh = H2 * sr(0.45, 0.98);
     const lean = sr(-0.25, 0.25) * W;
     const g = x.createLinearGradient(0, H2, 0, H2 - bh);
     const dry = srnd() < 0.34;
-    const top = dry ? [152, 138, 90] : [si(98, 120), si(106, 126), si(62, 76)];
+    const top = dry ? [146, 134, 92] : [si(92, 108), si(100, 116), si(62, 74)];
     g.addColorStop(0, "rgb(46,52,30)");
     g.addColorStop(0.6, rgba(top[0] * 0.8, top[1] * 0.8, top[2] * 0.8));
     g.addColorStop(1, rgba(...top));
@@ -3570,6 +3586,12 @@ var FXU_GLSL = (
 uniform sampler2D uBurn, uChar; uniform vec3 uBurnBox; uniform float uWetG, uRain, uFxT, uFlash, uCaus;
 vec4 burnAt(vec2 xz) { return texture2D(uBurn, (xz - uBurnBox.xy) * uBurnBox.z); }
 vec4 charAt(vec2 xz) { return texture2D(uChar, (xz - uBurnBox.xy) * uBurnBox.z); }
+float sfxHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float sfxNoise(vec3 x) {
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(sfxHash(i), sfxHash(i + vec3(1, 0, 0)), f.x), mix(sfxHash(i + vec3(0, 1, 0)), sfxHash(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(sfxHash(i + vec3(0, 0, 1)), sfxHash(i + vec3(1, 0, 1)), f.x), mix(sfxHash(i + vec3(0, 1, 1)), sfxHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
 `
 );
 var dirty = false;
@@ -3718,16 +3740,17 @@ function injectStructFX(mat) {
       }`);
     sh.fragmentShader = (sh.fragmentShader.includes("uniform sampler2D uBurn") ? "varying vec3 vSW;\n" : FXU_GLSL + "varying vec3 vSW;\n") + sh.fragmentShader.replace("#include <color_fragment>", `#include <color_fragment>
         vec4 chS = charAt(vSW.xz);
-        float chn = 0.5 + 0.5 * sin(vSW.x * 3.7 + vSW.z * 2.9 + vSW.y * 5.1) * sin(vSW.x * 1.3 - vSW.y * 2.2 + vSW.z * 4.4);
+        float chn = sfxNoise(vSW * 2.3) * 0.65 + sfxNoise(vSW * 6.1 + 7.0) * 0.35;
         float chK = smoothstep(0.02, 0.55, chS.r + (chn - 0.5) * 0.3 * chS.r);
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.022, 0.02) * (0.6 + chn * 0.8), chK * 0.96);`).replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
         {
-          // тлеющие трещины: тонкие прожилки по обугленному, мерцают
-          float fl = 0.65 + 0.35 * sin(uFxT * 7.0 + vSW.x * 3.1 + vSW.z * 2.3);
-          float cr = abs(sin(vSW.x * 6.3 + vSW.y * 9.1 + sin(vSW.z * 4.7) * 2.0) * sin(vSW.z * 5.9 - vSW.y * 7.7 + sin(vSW.x * 3.3) * 2.0));
-          cr = smoothstep(0.975, 1.0, 1.0 - cr);
+          // тлеющие трещины: гребни шума (изолинии) — рваная сетка без регулярной решётки, только по сильно обугленному
+          float fl = 0.6 + 0.4 * sfxNoise(vec3(vSW.xz * 0.8, uFxT * 1.7));
+          float n1 = sfxNoise(vSW * 3.1 + vec3(3.7, 1.1, 9.2)), n2 = sfxNoise(vSW * 7.3 + vec3(1.3, 5.7, 2.1));
+          float cr = 1.0 - abs(n1 * 2.0 - 1.0);
+          cr = smoothstep(0.9, 0.99, cr) * smoothstep(0.35, 0.65, n2);
           float g = chS.g * chS.g * smoothstep(0.45, 0.95, chS.r);
-          totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * g * (0.03 + cr * 0.55) * fl;
+          totalEmissiveRadiance += vec3(1.0, 0.3, 0.05) * g * (0.03 + cr * 0.6 * smoothstep(0.7, 1.0, chS.r)) * fl;
         }`);
   };
   const key2 = mat.customProgramCacheKey();
@@ -3754,8 +3777,17 @@ function foliage(map, o = {}) {
     metalness: 0
   });
   m.emissive = new THREE5.Color(o.glow ?? 725510);
+  // ночью листва не проваливается в чёрное: лунный контровой свет по кромкам карточек
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uMoonRim = MOONRIM;
+    sh.fragmentShader = "uniform vec3 uMoonRim;\n" + sh.fragmentShader.replace("#include <emissivemap_fragment>", `#include <emissivemap_fragment>
+      { float rimK = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
+        totalEmissiveRadiance += uMoonRim * diffuseColor.rgb * (0.35 + rimK * 2.2); }`);
+  };
+  m.customProgramCacheKey = () => "foliage-rim";
   return m;
 }
+var MOONRIM = { value: new THREE5.Color(0, 0, 0) };
 function depthFor(mat, wind) {
   const d = new THREE5.MeshDepthMaterial({ depthPacking: THREE5.RGBADepthPacking, map: mat.map, alphaTest: mat.alphaTest, side: THREE5.DoubleSide });
   if (wind) injectWind(d, wind);
@@ -4078,7 +4110,8 @@ function pineVariant(seed, lod) {
     bend,
     color: (t) => {
       const k = smoothstep(orange - 0.12, orange + 0.08, t);
-      return [lerp(0.66, 1.25, k), lerp(0.56, 0.72, k), lerp(0.5, 0.5, k)];
+      // верх ствола сосны рыжеватый, но не оранжевый
+      return [lerp(0.66, 1.06, k), lerp(0.56, 0.7, k), lerp(0.5, 0.56, k)];
     }
   });
   const center = new V3(0, 0.82, 0);
@@ -4474,14 +4507,23 @@ function lodHide(im3) {
 function updateForestLOD(force) {
   const cp = camera.position;
   if (!force && lastLOD.distanceToSquared(cp) < 6.25) return;
+  // при обычном движении пересчитываем только клетки у кольца перехода и переписываем лишь изменившиеся слоты
+  if (!force && lodFull.distanceToSquared(cp) < 400 && Math.abs(lodFull.y - cp.y) < 6 && LODS.length && LODS[0].hiList) {
+    lastLOD.copy(cp);
+    return updateForestLODCells(cp);
+  }
   lastLOD.copy(cp);
+  lodFull.copy(cp);
   // полоса перехода: в ней дерево есть в обоих LOD, и один растворяется, пока проявляется другой
   const R = Q.treeNearR, band = Math.max(6, R * 0.16), r0 = R - band / 2, r1 = R + band / 2;
   const R0 = r0 * r0, R1 = r1 * r1;
   for (const L of LODS) {
     let hi = 0, lo = 0;
     const hA = lodHide(L.hiIM).array, lA = lodHide(L.loIM).array;
+    L.hiList = [];
+    L.loList = [];
     for (const t of L.trees) {
+      t._hi = t._lo = -1;
       if (t.dead || t.broken) continue;
       const dx = t.x - cp.x, dy = t.y + t.h * 0.5 - cp.y, dz = t.z - cp.z;
       const d2 = dx * dx + dy * dy + dz * dz;
@@ -4490,12 +4532,16 @@ function updateForestLOD(force) {
         L.hiIM.setMatrixAt(hi, t.matrix);
         L.hiIM.setColorAt(hi, t.color);
         hA[hi] = f;
+        t._hi = hi;
+        L.hiList.push(t);
         hi++;
       }
       if (f > 0) {
         L.loIM.setMatrixAt(lo, t.matrix);
         L.loIM.setColorAt(lo, t.color);
         lA[lo] = 1 - f;
+        t._lo = lo;
+        L.loList.push(t);
         lo++;
       }
     }
@@ -4507,6 +4553,90 @@ function updateForestLOD(force) {
     L.loIM.instanceMatrix.needsUpdate = true;
     if (L.hiIM.instanceColor) L.hiIM.instanceColor.needsUpdate = true;
     if (L.loIM.instanceColor) L.loIM.instanceColor.needsUpdate = true;
+  }
+}
+var lodFull = new V3(1e9, 0, 0);
+var LOD_GRID = null;
+function lodGrid() {
+  if (LOD_GRID) return LOD_GRID;
+  LOD_GRID = new Map();
+  for (const L of LODS) for (const t of L.trees) {
+    const k = Math.floor(t.x / 16) * 1e4 + Math.floor(t.z / 16);
+    if (!LOD_GRID.has(k)) LOD_GRID.set(k, []);
+    LOD_GRID.get(k).push(t);
+  }
+  return LOD_GRID;
+}
+// слот экземпляра: добавление в конец, удаление — перестановкой последнего на место удалённого
+function lodSet(L, which, t, val) {
+  const im3 = which ? L.loIM : L.hiIM, list = which ? L.loList : L.hiList, A3 = lodHide(im3).array, key = which ? "_lo" : "_hi";
+  let s = t[key];
+  if (val === null) {
+    if (s < 0) return;
+    const last = list.pop();
+    if (last !== t) {
+      list[s] = last;
+      last[key] = s;
+      im3.setMatrixAt(s, last.matrix);
+      im3.setColorAt(s, last.color);
+      A3[s] = A3[list.length];
+      lodDirty(L, which, s);
+    }
+    t[key] = -1;
+    im3.count = list.length;
+    return;
+  }
+  if (s < 0) {
+    if (list.length >= im3.instanceMatrix.count) return;
+    s = list.length;
+    list.push(t);
+    t[key] = s;
+    im3.setMatrixAt(s, t.matrix);
+    im3.setColorAt(s, t.color);
+    im3.count = list.length;
+  } else if (Math.abs(A3[s] - val) < 1e-3) return;
+  A3[s] = val;
+  lodDirty(L, which, s);
+}
+function lodDirty(L, which, s) {
+  const d = L.dirty ??= [[1e9, -1], [1e9, -1]];
+  d[which][0] = Math.min(d[which][0], s);
+  d[which][1] = Math.max(d[which][1], s);
+}
+function updateForestLODCells(cp) {
+  const R = Q.treeNearR, band = Math.max(6, R * 0.16), r0 = R - band / 2, r1 = R + band / 2;
+  // кольцо по горизонтали: с высоты дрона граница перехода ближе к центру
+  const hy = Math.abs(cp.y - hFast(cp.x, cp.z)) + 20;
+  const G3 = lodGrid(), inner = Math.max(0, Math.sqrt(Math.max(0, r0 * r0 - hy * hy)) - 24), outer = r1 + 24;
+  const c0x = Math.floor((cp.x - outer) / 16), c1x = Math.floor((cp.x + outer) / 16), c0z = Math.floor((cp.z - outer) / 16), c1z = Math.floor((cp.z + outer) / 16);
+  for (let ix = c0x; ix <= c1x; ix++) for (let iz = c0z; iz <= c1z; iz++) {
+    const cx = (ix + 0.5) * 16 - cp.x, cz = (iz + 0.5) * 16 - cp.z, cd = Math.hypot(cx, cz);
+    if (cd < inner - 12 || cd > outer + 12) continue;
+    const list = G3.get(ix * 1e4 + iz);
+    if (!list) continue;
+    for (const t of list) {
+      if (t.dead || t.broken) continue;
+      const dx = t.x - cp.x, dy = t.y + t.h * 0.5 - cp.y, dz = t.z - cp.z;
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const f = d <= r0 ? 0 : d >= r1 ? 1 : smoothstep(r0, r1, d);
+      lodSet(t.L, 0, t, f < 1 ? f : null);
+      lodSet(t.L, 1, t, f > 0 ? 1 - f : null);
+    }
+  }
+  for (const L of LODS) {
+    if (!L.dirty) continue;
+    for (const which of [0, 1]) {
+      const [a, b] = L.dirty[which];
+      if (b < a) continue;
+      const im3 = which ? L.loIM : L.hiIM, n2 = b - a + 1;
+      for (const [attr, sz] of [[im3.instanceMatrix, 16], [im3.instanceColor, 3], [im3.geometry.attributes.aHide, 1]]) {
+        if (!attr) continue;
+        attr.clearUpdateRanges();
+        attr.addUpdateRange(a * sz, n2 * sz);
+        attr.needsUpdate = true;
+      }
+    }
+    L.dirty = null;
   }
 }
 function forestStats() {
@@ -5342,8 +5472,10 @@ var RAIN_FS = (
   void main(){
     float a = vA * smoothstep(0.5, 0.2, abs(vUv.x - 0.5)) * smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.6, vUv.y) * 0.3;
     if (a < 0.003) discard;
-    gl_FragColor = vec4(uL + uFlashR * vec3(0.8, 0.85, 1.0), a);
+    gl_FragColor = vec4(uL + uFlashR * vec3(0.8, 0.85, 1.0), 1.0);
     #include <fog_fragment>
+    // капля подсвечена небом: почти чистое сложение, не темнее фона
+    gl_FragColor = vec4(gl_FragColor.rgb * a, a * 0.2);
   }`
 );
 var SPLASH_VS = (
@@ -5422,6 +5554,9 @@ function buildWeather() {
     return m;
   };
   rainMesh = new THREE9.Mesh(quadsIG(Math.round(24e3 * (Q.rain ?? 1))), mk(RAIN_VS, RAIN_FS));
+  rainMesh.material.blending = THREE9.CustomBlending;
+  rainMesh.material.blendSrc = THREE9.OneFactor;
+  rainMesh.material.blendDst = THREE9.OneMinusSrcAlphaFactor;
   rainMesh.frustumCulled = false;
   rainMesh.renderOrder = 9;
   splashMesh = new THREE9.Mesh(quadsIG(Math.round(300 + 500 * Q.tex)), mk(SPLASH_VS, SPLASH_FS));
@@ -5758,10 +5893,10 @@ function buildClouds() {
     transparent: true,
     depthWrite: false,
     fog: false,
-    uniforms: { uT: { value: 0 }, uSun: { value: new THREE10.Vector3() }, uLit: { value: new THREE10.Color() }, uShade: { value: new THREE10.Color() }, uCover: { value: 0.45 }, uWind: { value: new THREE10.Vector2() }, uDense: { value: 0 } },
+    uniforms: { uT: { value: 0 }, uSun: { value: new THREE10.Vector3() }, uLit: { value: new THREE10.Color() }, uShade: { value: new THREE10.Color() }, uCover: { value: 0.45 }, uWind: { value: new THREE10.Vector2() }, uDense: { value: 0 }, uFog: { value: new THREE10.Color() } },
     vertexShader: `varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-      uniform float uT, uCover, uDense; uniform vec3 uSun, uLit, uShade; uniform vec2 uWind; varying vec3 vP;
+      uniform float uT, uCover, uDense; uniform vec3 uSun, uLit, uShade, uFog; uniform vec2 uWind; varying vec3 vP;
       float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
         return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
@@ -5779,6 +5914,8 @@ function buildClouds() {
         // сплошная облачность: пелена без просветов, низ темнее
         a = max(a, uDense * smoothstep(-0.02, 0.12, vP.y));
         col = mix(col, uShade * (0.9 + d * 0.5), uDense * (1.0 - c) * 0.8);
+        // к горизонту облака растворяются в цвете тумана: нет тёмной «крыши» над светлой стеной тумана
+        col = mix(uFog, col, smoothstep(0.0, 0.28, vP.y));
         gl_FragColor = vec4(col, a);
       }`
   });
@@ -5860,7 +5997,9 @@ function updateSky(dt) {
   scene.fog.color.setRGB(...k.fog);
   const fogLum = (k.fog[0] + k.fog[1] + k.fog[2]) / 3;
   const dark = 1 - 0.45 * WEATHER.storm - 0.15 * WEATHER.rain;
-  scene.fog.color.lerp(_grey.setRGB(fogLum * 0.82 * dark, fogLum * 0.86 * dark, fogLum * 0.94 * dark), ov * 0.85);
+  // пасмурно: туман приглушается и темнеет до яркости облачной пелены, но сохраняет оттенок суток (не нейтрально-серый)
+  _grey.setRGB(lerp(k.fog[0], fogLum * 0.94, 0.45), lerp(k.fog[1], fogLum * 0.97, 0.45), lerp(k.fog[2], fogLum * 1.05, 0.45)).multiplyScalar(0.8 * dark);
+  scene.fog.color.lerp(_grey, ov * 0.85);
   scene.fog.color.lerp(_grey.setRGB(0.42, 0.46, 0.56), Math.min(0.6, fl * 0.45));
   SKY.fogColor.copy(scene.fog.color);
   scene.fog.density = k.fogD * lerp(1, 0.22, smoothstep(8, 90, agl)) * (1 + WEATHER.fogK * 2.4);
@@ -5875,6 +6014,7 @@ function updateSky(dt) {
   moonMesh.material.opacity = clamp(smoothstep(-0.05, 0.1, _m.y), 0, 1) * (0.25 + night * 0.75) * (1 - ov * 0.92);
   stars.position.copy(camera.position);
   stars.material.uniforms.uO.value = night * night * (1 - ov);
+  MOONRIM.value.setRGB(0.5, 0.62, 0.95).multiplyScalar(0.06 * night * (0.35 + 0.65 * moonUp) * (1 - ov * 0.6));
   stars.material.uniforms.uT.value = FRAME.t;
   clouds.position.copy(camera.position);
   clouds.position.y -= 60;
@@ -5887,7 +6027,9 @@ function updateSky(dt) {
   lit.lerp(_grey.setRGB(fogLum * 0.9 * dark, fogLum * 0.92 * dark, fogLum * dark), ov * 0.8);
   lit.lerp(_grey.setRGB(0.8, 0.85, 1), Math.min(0.7, fl * 0.5));
   cu.uLit.value.copy(lit);
-  cu.uShade.value.setRGB(k.fog[0] * 0.55, k.fog[1] * 0.55, k.fog[2] * 0.6).multiplyScalar((1 - ov * 0.45) * dark).addScalar(fl * 0.15);
+  // низ облаков в пелене не темнее тумана у горизонта, иначе кроны «светятся» на фоне неба
+  cu.uShade.value.setRGB(k.fog[0], k.fog[1], k.fog[2] * 1.05).multiplyScalar(lerp(0.55, 0.86, ov) * (1 - ov * 0.12) * dark).addScalar(fl * 0.15);
+  cu.uFog.value.copy(scene.fog.color);
   cu.uCover.value = 0.42 + 0.08 * Math.sin(FRAME.t * 0.01) + ov * 0.56;
   cu.uDense.value = smoothstep(0.55, 0.95, ov);
   u.turbidity.value = k.turb + ov * 9;
@@ -6462,8 +6604,8 @@ var WATER_FS = (
     float fres = 0.03 + 0.97 * pow(1.0 - ndv, 5.0);
     vec3 refl = uSky;
     if (uHasRefl > 0.5) {
-      // вблизи камеры отражение почти не искажается: иначе у самой воды «рвёт» картинку
-      vec4 ruv = vRUV; ruv.xy += slope * 0.09 * ruv.w * clamp(camDist / 14.0, 0.12, 1.0);
+      // вблизи камеры отражение почти не искажается, вдали искажение тоже гаснет: нет белых «молний» от мелкой ряби
+      vec4 ruv = vRUV; ruv.xy += slope * 0.07 * ruv.w * clamp(camDist / 14.0, 0.12, 1.0) / (1.0 + camDist / 45.0);
       refl = texture2DProj(tRefl, ruv).rgb;
     }
     vec3 body = mix(uShallow, uDeep, smoothstep(0.0, 2.4, vDepth));
@@ -6472,9 +6614,12 @@ var WATER_FS = (
     col += uSunCol * pow(max(dot(n, H), 0.0), 320.0) * 7.0 * step(0.0, uSunDir.y);
     vec3 Hm = normalize(uMoonDir + V);
     col += vec3(0.55, 0.65, 0.85) * pow(max(dot(n, Hm), 0.0), 420.0) * 1.6 * uNight * step(0.0, uMoonDir.y);
-    // пена и муть у самого берега
+    // пена и муть у самого берега: рваная полоса пены по кромке, чуть колышется
     float edge = 1.0 - smoothstep(0.0, 0.22, vDepth);
     col = mix(col, uShallow * 1.6 + 0.02, edge * 0.35);
+    float fz = texture2D(tNormal, uv * 0.9 + vec2(uTime * 0.02, -uTime * 0.015)).b;
+    float foam = smoothstep(0.16, 0.03, vDepth + sin(uTime * 0.9 + uv.x * 0.7 + uv.y * 0.5) * 0.025) * smoothstep(0.45, 0.8, fz);
+    col = mix(col, vec3(0.62, 0.64, 0.6) * (0.35 + 0.65 * (1.0 - uNight)) * (uSky * 0.6 + 0.4), foam * 0.55);
     float a = smoothstep(-0.02, 0.28, vDepth) * 0.96;
     if (a < 0.01) discard;
     gl_FragColor = vec4(col, a);
@@ -6499,7 +6644,8 @@ function makeMirror(size) {
       camPos.setFromMatrixPosition(camera.matrixWorld);
       view.subVectors(pos, camPos);
       if (view.dot(n2) > 0) return;
-      if (Q.refl < 500 && frame3++ & 1) return;
+      // отражение обновляется через кадр: на 60+ fps задержки не видно, а стоимость — вдвое ниже
+      if (frame3++ & 1) return;
       view.reflect(n2).negate().add(pos);
       rot.extractRotation(camera.matrixWorld);
       look2.set(0, 0, -1).applyMatrix4(rot).add(camPos);
@@ -6566,7 +6712,8 @@ function waterGeometry() {
   return g;
 }
 function buildLake() {
-  const mirror = Q.refl ? makeMirror(Q.refl) : null;
+  // зеркало — половина разрешения экрана (не меньше пресета): вдали нет ступенчатых бликов
+  const mirror = Q.refl ? makeMirror(Math.min(1280, Math.max(Q.refl, Math.round(innerWidth * Math.min(devicePixelRatio, Q.pixel) * 0.5)))) : null;
   LAKE.mirror = mirror;
   const uniforms = THREE12.UniformsUtils.merge([THREE12.UniformsLib.fog, {
     tRefl: { value: null },
@@ -6635,6 +6782,7 @@ function buildReeds() {
     if (fbm(x * 0.09 + 3, z * 0.09 - 5, 2) < 0.47) continue;
     if (pathInfluence(x, z, 2.5) > 0 || trenchDist(x, z) < 2) continue;
     if (nearPier(x, z, 3.5)) continue;
+    if (inFireLane(x, z)) continue;
     pts.push([x, z]);
   }
   for (let k = 0; k < 240; k++) {
@@ -6691,7 +6839,8 @@ function buildLilies() {
   shape.lineTo(0, 0);
   const g = new THREE12.ShapeGeometry(shape, 1);
   g.rotateX(-Math.PI / 2);
-  const mat = new THREE12.MeshStandardMaterial({ color: 4151850, roughness: 0.45, side: THREE12.DoubleSide });
+  // кувшинки матовые и тёмные: не бликуют белым на фоне воды
+  const mat = new THREE12.MeshStandardMaterial({ color: 2835744, roughness: 0.82, side: THREE12.DoubleSide });
   const pts = [];
   for (let k = 0; k < 9e3 && pts.length < 700; k++) {
     const phi = R2() * TAU, rr = R2.range(0.72, 0.92);
@@ -6709,7 +6858,7 @@ function buildLilies() {
     s.set(sc, 1, sc);
     m.compose(p, q, s);
     im3.setMatrixAt(i, m);
-    const v = R2.range(0.7, 1.2);
+    const v = R2.range(0.55, 0.9);
     c.setRGB(v, v, v * 0.85);
     im3.setColorAt(i, c);
   });
@@ -7400,7 +7549,8 @@ function finishLamps() {
   poolMesh.renderOrder = 3;
   scene.add(poolMesh);
   for (let i = 0; i < Q.lights; i++) {
-    const sp = new THREE14.SpotLight(16763274, 0, 24, 1.05, 0.65, 1.6);
+    // широкий мягкий край: пятно не режет кусты жёсткой оранжевой границей
+    const sp = new THREE14.SpotLight(16763274, 0, 24, 1.2, 1, 1.6);
     sp.castShadow = i < Q.spotShadows;
     if (sp.castShadow) {
       sp.shadow.mapSize.set(512, 512);
@@ -7793,7 +7943,7 @@ function buildMotes() {
 }
 function buildNeedles() {
   const N2 = Math.round(Q.dust * 0.35);
-  const base2 = new THREE15.PlaneGeometry(0.035, 0.12);
+  const base2 = new THREE15.PlaneGeometry(0.03, 0.075);
   const g = new THREE15.InstancedBufferGeometry();
   g.index = base2.index;
   g.attributes.position = base2.attributes.position;
@@ -7807,7 +7957,7 @@ function buildNeedles() {
     transparent: true,
     depthWrite: false,
     uniforms: { uT: { value: 0 }, uC: { value: new THREE15.Vector3() }, uW: { value: new THREE15.Vector2() }, uWA: { value: 0.5 }, uL: { value: new THREE15.Color(1, 1, 1) }, uO: { value: 1 } },
-    vertexShader: `attribute vec4 aR; uniform float uT, uWA; uniform vec3 uC; uniform vec2 uW; varying float vA; varying float vS;
+    vertexShader: `attribute vec4 aR; uniform float uT, uWA; uniform vec3 uC; uniform vec2 uW; varying float vA; varying float vS; varying vec2 vUv;
       mat3 rot(vec3 a){ vec3 s = sin(a), c = cos(a);
         return mat3(c.y*c.z, c.y*s.z, -s.y, s.x*s.y*c.z - c.x*s.z, s.x*s.y*s.z + c.x*c.z, s.x*c.y, c.x*s.y*c.z + s.x*s.z, c.x*s.y*s.z - s.x*c.z, c.x*c.y); }
       void main(){
@@ -7821,10 +7971,23 @@ function buildNeedles() {
         vec3 v = rot(vec3(uT * (1.0 + aR.x * 3.0), uT * (0.7 + aR.z * 2.0), aR.y * 6.28)) * position;
         vS = aR.w;
         vA = smoothstep(0.0, 2.0, y) * smoothstep(H, H - 2.0, y);
-        gl_Position = projectionMatrix * viewMatrix * vec4(w + v, 1.0);
+        vUv = uv;
+        vec4 mv = viewMatrix * vec4(w + v, 1.0);
+        // у самой камеры хвоинка гаснет — не висит перед объективом крупным пятном
+        vA *= smoothstep(0.5, 2.2, -mv.z);
+        gl_Position = projectionMatrix * mv;
       }`,
-    fragmentShader: `uniform vec3 uL; uniform float uO; varying float vA; varying float vS;
-      void main(){ vec3 c = mix(vec3(0.34, 0.22, 0.1), vec3(0.3, 0.33, 0.16), step(0.6, vS)); gl_FragColor = vec4(c * uL, vA * uO); }`
+    fragmentShader: `uniform vec3 uL; uniform float uO; varying float vA; varying float vS; varying vec2 vUv;
+      void main(){
+        // пара хвоинок: две тонкие заострённые иглы от общего основания
+        float y = vUv.y, taper = (1.0 - y) * smoothstep(0.0, 0.08, y);
+        float x1 = abs(vUv.x - 0.5 - (y - 0.1) * 0.28), x2 = abs(vUv.x - 0.5 + (y - 0.1) * 0.28);
+        float nd = max(smoothstep(0.09 * taper + 0.02, 0.0, x1), smoothstep(0.09 * taper + 0.02, 0.0, x2)) * step(0.02, taper);
+        float a = nd * vA * uO;
+        if (a < 0.05) discard;
+        vec3 c = mix(vec3(0.34, 0.22, 0.1), vec3(0.3, 0.33, 0.16), step(0.6, vS)) * (0.75 + 0.35 * y);
+        gl_FragColor = vec4(c * uL, a);
+      }`
   });
   needles = new THREE15.Mesh(g, m);
   needles.frustumCulled = false;
@@ -7910,8 +8073,9 @@ function updateParticles(dt, sky2) {
   nu.uC.value.copy(cp);
   nu.uW.value.copy(WIND.dir);
   nu.uWA.value = WIND.strength;
-  nu.uL.value.setScalar(lerp(1, 0.12, sky2.night));
-  nu.uO.value = cp.y - (sky2.ground ?? 0) < 20 && lakeRho(cp.x, cp.z) > 1.3 ? 1 : 0;
+  // освещение как у сцены: цвет неба × общий свет (ночью — тёмные, не светятся); с высоты дрона — почти нет
+  nu.uL.value.copy(hemi.color).multiplyScalar(sky2.light * 1.1);
+  nu.uO.value = clamp((14 - (cp.y - (sky2.ground ?? 0))) / 9, 0, 1) * (lakeRho(cp.x, cp.z) > 1.3 ? 1 : 0);
   const h = sky2.h;
   const fogAmt = clamp(Math.max(1 - smoothstepF(4, 8.5, h) * (1 - smoothstepF(20.3, 23, h)), 0), 0, 1);
   for (const m of mist) {
@@ -13296,11 +13460,23 @@ function updateBurning(dt) {
       if (!alive.length || Math.random() > s.burn * wetK) continue;
       const p = alive[Math.random() * alive.length | 0], b = p.box;
       const top = p.kind === "roof" || Math.random() < 0.6;
-      const x = sr(b.min.x, b.max.x), y = top ? lerp(b.min.y, b.max.y, sr(0.7, 1)) : sr(b.min.y, b.max.y), z = sr(b.min.z, b.max.z);
+      let x = sr(b.min.x, b.max.x), y = top ? lerp(b.min.y, b.max.y, sr(0.7, 1)) : sr(b.min.y, b.max.y), z = sr(b.min.z, b.max.z);
+      // язык не лежит в плоскости стены: выносим наружу по нормали (от центра постройки), с кровли — вверх
+      let ox = 0, oz = 0;
+      if (p.dims) {
+        const nx = Math.sin(p.dims.rot), nz = Math.cos(p.dims.rot), sg = (x - s.center.x) * nx + (z - s.center.z) * nz > 0 ? 1 : -1;
+        ox = nx * sg;
+        oz = nz * sg;
+        const off = sr(0.22, 0.45);
+        x += ox * off;
+        z += oz * off;
+      } else if (p.kind === "roof") y += sr(0.1, 0.3);
       const hot = Math.random();
       const col = hot < 0.2 ? [2.6, 1.55, 0.6] : hot < 0.75 ? [1.9, 0.82, 0.28] : [1.3, 0.42, 0.12];
       const big = top ? sr(0.8, 1.7) : sr(0.4, 0.9);
-      FX.add.spawn({ flame: true, x, y, z, vx: sr(-0.25, 0.25) + WIND.dir.x * 0.4, vy: sr(2, 4.2), vz: sr(-0.25, 0.25) + WIND.dir.y * 0.4, size: big * (0.55 + s.burn * 0.8), grow: -0.45, life: sr(0.45, 1.05), col, a: 0.95, cool: 0.35, windK: 1.1 });
+      FX.add.spawn({ flame: true, x, y, z, vx: sr(-0.25, 0.25) + WIND.dir.x * 0.4 + ox * 0.35, vy: sr(2, 4.2), vz: sr(-0.25, 0.25) + WIND.dir.y * 0.4 + oz * 0.35, size: big * (0.55 + s.burn * 0.8), grow: -0.45, life: sr(0.45, 1.05), col, a: 0.95, cool: 0.35, windK: 1.1 });
+      // второй, скрещённый язык рядом: объём вместо плоской «наклейки»
+      if (top && Math.random() < 0.6) FX.add.spawn({ flame: true, x: x + ox * 0.15 + sr(-0.15, 0.15), y: y + sr(0, 0.2), z: z + oz * 0.15 + sr(-0.15, 0.15), vx: WIND.dir.x * 0.4 + ox * 0.5, vy: sr(2.4, 4.6), vz: WIND.dir.y * 0.4 + oz * 0.5, size: big * (0.4 + s.burn * 0.6), grow: -0.4, life: sr(0.35, 0.8), col: [col[0] * 1.1, col[1] * 1.05, col[2]], a: 0.8, cool: 0.4, windK: 1.2, rot: sr(-0.35, 0.35) });
     }
     // столб дыма: у основания густой, почти чёрный, подсвеченный огнём; выше — серо-бурый и светлее
     const smokeRate = (4 + s.burn * 18) * (0.6 + Q.fx * 0.4);
@@ -15947,6 +16123,16 @@ var MG_ARC = 1.3;
 function mgTargetDir(x, z, tx, tz) {
   return Math.atan2(tx - x, tz - z);
 }
+// сектор обстрела гнезда у озера: камыш там реже (выкошен), вокруг гнезда — чисто
+function inFireLane(x, z) {
+  for (const pl of MG.plan) {
+    if (pl.kind !== "ground") continue;
+    const dx = x - pl.x, dz = z - pl.z, d = Math.hypot(dx, dz);
+    if (d < 6) return true;
+    if (d < 34 && Math.abs(angDiff(Math.atan2(dx, dz), pl.face)) < 0.32 && Math.random() < 0.85) return true;
+  }
+  return false;
+}
 // план: 4 гнезда у озера (смотрят на воду), по гнезду на крышах столовой лагеря и главного корпуса турбазы (друг на друга),
 // по два у каждой базы. Плюс две высокие вышки на берегах озера напротив баз
 function planMG() {
@@ -15969,7 +16155,9 @@ function planMG() {
     const s = SPAWNS[name];
     const phi = (s.x > 0 ? Math.PI / 2 : -Math.PI / 2) + 0.55;
     const [tx, tz] = lakeContour(phi, 12);
-    const [x, z] = findSpot(tx, tz, 2.6);
+    let [x, z] = findSpot(tx, tz, 2.6);
+    // не ставим вплотную к старым лабазам
+    for (let k = 0; k < 12 && LANDMARKS.stands.some((o) => Math.hypot(o.x - x, o.z - z) < 16); k++) [x, z] = findSpot(...lakeContour(phi + 0.12 * (k + 1), 12 + k), 2.6);
     LANDMARKS.stands.push({ x, z, rot: Math.atan2(s.x - x, s.z - z), PH: 7.2, W: 1.25, tall: true });
     keep(x, z, 3.2);
     MG.towers.push({ x, z, sgn });
@@ -16351,7 +16539,8 @@ function updateMounted(dt) {
   const back = _v41.set(-Math.sin(N.yaw), 0, -Math.cos(N.yaw));
   N.yawG.getWorldPosition(_cam0);
   _cam0.addScaledVector(back, 1.25).y += 0.72;
-  N.gunG.localToWorld(_camA.set(-0.47, 0.305, 0));
+  // глаз над целиком: прицельная планка и мушка в кадре, коробка не закрывает обзор
+  N.gunG.localToWorld(_camA.set(-0.78, 0.365, 0));
   camera.position.lerpVectors(_cam0, _camA, MG.aim);
   let shx = 0, shy = 0;
   if (BLAST.shake > 0) {
@@ -17305,8 +17494,8 @@ function updateSearchlights(dt) {
     if (vis) {
       // днём луч почти не виден, ночью и в тумане/дожде — плотный
       const haze = (0.12 + 0.88 * night) * (1 + WEATHER.fogK * 1.2 + WEATHER.rain * 0.8);
-      s.core.material.uniforms.uI.value = lv * 0.3;
-      s.halo.material.uniforms.uI.value = lv * 0.06;
+      s.core.material.uniforms.uI.value = lv * 0.55;
+      s.halo.material.uniforms.uI.value = lv * 0.12;
       s.core.material.uniforms.uHaze.value = s.halo.material.uniforms.uHaze.value = haze;
       act.push(s);
     }
@@ -17490,9 +17679,10 @@ function finish() {
   searchlight.target.position.set(0, -0.35, -1);
   camera.add(searchlight, searchlight.target);
   TIME.h = 9;
-  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор, у ящика — пополнить боезапас · X — перезарядка · M — карта · P — облёт · R — на базу\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
+  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор, у ящика — пополнить боезапас · X — перезарядка · M — карта · P — облёт · R — на базу\nПулемёт: E у рукояток — встать · ЛКМ — огонь · ПКМ — прицел · X — лента · E — отойти · L в будке вышки — прожектор\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
   BLAST.hooks.push((x, y, z, size) => scareBirds(x, y, z, 70 + 45 * size, 1));
   BLAST.hooks.push(onBlastMG);
+  gpuWrapPasses();
   WEATHER.onStrike = (x, y, z, dist) => {
     thunder(dist);
     if (dist < 150) lightningHit(x, z);
@@ -17820,6 +18010,8 @@ addEventListener("keydown", (e) => {
     case "F3": {
       const f = $("#fps");
       f.style.display = f.style.display === "block" ? "none" : "block";
+      GPUT.on = f.style.display === "block";
+      if (GPUT.on && GPUT.ext === null) GPUT.ext = renderer.getContext().getExtension("EXT_disjoint_timer_query_webgl2") || false;
       break;
     }
     case "Escape":
@@ -17872,6 +18064,7 @@ var fpsAcc = 0;
 var fpsN = 0;
 var fpsT = 0;
 function frame2(dt, render = true) {
+  const cpu0 = performance.now();
   FRAME.dt = dt;
   FRAME.t += dt;
   FRAME.n++;
@@ -17932,13 +18125,51 @@ function frame2(dt, render = true) {
   const se = PERF.shadowEvery;
   renderer.shadowMap.autoUpdate = se <= 1;
   if (se > 1 && (FRAME.n % se === 0 || BLAST.shake > 0.05)) renderer.shadowMap.needsUpdate = true;
+  GPUT.cpu = lerp(GPUT.cpu, performance.now() - cpu0, 0.1);
   composer.render();
+  if (GPUT.on) gpuPoll();
   updateHud(dt);
   const hint = hudEls().hint ??= $("#hint");
   if (hint.textContent !== INTER.hint) {
     hint.textContent = INTER.hint;
     hint.classList.toggle("on", !!INTER.hint);
   }
+}
+// F3: GPU-таймер по проходам постобработки (EXT_disjoint_timer_query_webgl2) и время логики на CPU
+var GPUT = { ext: null, on: false, pend: [], res: {}, cpu: 0 };
+function gpuWrapPasses() {
+  for (const p of composer.passes) {
+    const r = p.render.bind(p), name = p.constructor.name.replace("Pass", "") || "pass";
+    p.render = (...a) => {
+      if (!GPUT.on || !GPUT.ext) return r(...a);
+      const gl = renderer.getContext(), q = gl.createQuery();
+      gl.beginQuery(GPUT.ext.TIME_ELAPSED_EXT, q);
+      r(...a);
+      gl.endQuery(GPUT.ext.TIME_ELAPSED_EXT);
+      GPUT.pend.push({ q, name });
+    };
+  }
+}
+function gpuPoll() {
+  if (!GPUT.ext) return;
+  const gl = renderer.getContext(), disjoint = gl.getParameter(GPUT.ext.GPU_DISJOINT_EXT);
+  for (let i = GPUT.pend.length - 1; i >= 0; i--) {
+    const { q, name } = GPUT.pend[i];
+    if (!gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) continue;
+    if (!disjoint) {
+      const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+      GPUT.res[name] = GPUT.res[name] === void 0 ? ms : lerp(GPUT.res[name], ms, 0.1);
+    }
+    gl.deleteQuery(q);
+    GPUT.pend.splice(i, 1);
+  }
+  if (GPUT.pend.length > 64) GPUT.pend.splice(0, GPUT.pend.length - 64);
+}
+function gpuLine() {
+  if (GPUT.ext === false) return `GPU-таймер недоступен · CPU логика ${GPUT.cpu.toFixed(1)} мс`;
+  const e = Object.entries(GPUT.res);
+  const tot = e.reduce((a, [, v]) => a + v, 0);
+  return `GPU ${tot.toFixed(1)} мс: ${e.map(([k, v]) => k + " " + v.toFixed(1)).join(" · ")}\nCPU логика ${GPUT.cpu.toFixed(1)} мс · тел ${PHYS.bodies.length} · пуль ${BUL.length}`;
 }
 function adaptResolution(dt) {
   PERF.acc += dt;
@@ -18011,6 +18242,7 @@ function loop() {
 ${s.calls} вызовов · ${(s.tris / 1e3).toFixed(0)}k треуг.
 деревья ${s.trees} (детальных ${s.hi}) · трава ${s.grass}
 фонари ${s.working}/${s.lamps} · мины ${s.mines}
+${gpuLine()}
 ${PL.pos.x.toFixed(1)}, ${PL.pos.y.toFixed(1)}, ${PL.pos.z.toFixed(1)} · ${fmtTime(TIME.h)}`;
     }
     fpsAcc = 0;
