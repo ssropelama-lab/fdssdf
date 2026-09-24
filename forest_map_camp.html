@@ -93,7 +93,7 @@
       <div><b>E</b>дверь / колючка</div><div><b>W у лестницы</b>лезть</div><div><b>M</b>карта</div><div><b>P</b>облёт</div><div><b>R</b>на базу</div>
       <div><b>N</b>фаза суток</div><div><b>1..4</b>утро…ночь</div><div><b>T · [ ]</b>время</div>
       <div><b>X</b>перезарядка</div><div><b>U</b>звук</div><div><b>V</b>интерфейс</div><div><b>Esc</b>пауза</div>
-      <div><b>E у пулемёта</b>встать за M2</div><div><b>ЛКМ / ПКМ</b>огонь / прицел</div><div><b>L в будке</b>прожектор вышки</div><div><b>F3</b>GPU/CPU</div>
+      <div><b>E у пулемёта</b>встать за M2</div><div><b>ЛКМ / ПКМ</b>огонь / прицел</div><div><b>L / E в будке</b>прожектор вышки</div><div><b>F3</b>GPU/CPU</div>
     </div>
     <button class="go" id="g_go">Взлететь</button><button class="go alt" id="g_cine">Облёт карты</button>
   </div>
@@ -1599,6 +1599,8 @@ function lakeContour(phi, offset = 0) {
   return lakeXZ(u, v);
 }
 var ISLAND = { x: 0, z: 0, r: 6.5 };
+// насыпные высоты под пулемётные гнёзда (заполняются в planMG, учитываются в baseH)
+var MOUNDS = [];
 var PATHS = [];
 function addPath(pts, w, kind, opt = {}) {
   const sm = opt.closed ? chaikin(pts, 3, true) : chaikin(pts, 3);
@@ -2006,6 +2008,15 @@ function baseH(x, z) {
     h += 2.4 * Math.exp(-(d * d) / (22 * 22));
   }
   h += smoothstep(MAP.FENCE + 4, 250, edgeDist(x, z)) * 16;
+  // насыпные высоты под пулемётные гнёзда: плоская макушка, пологие склоны, лёгкая неровность
+  for (let i = 0; i < MOUNDS.length; i++) {
+    const m = MOUNDS[i], dx = x - m.x, dz = z - m.z;
+    if (dx > m.r || dx < -m.r || dz > m.r || dz < -m.r) continue;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d >= m.r) continue;
+    const k = 1 - smoothstep(m.top, m.r, d);
+    h = Math.max(h, lerp(h, m.base + m.h, k * k * (3 - 2 * k)) + (d > m.top ? Math.sin(dx * 1.3 + dz * 0.7) * 0.08 * k : 0));
+  }
   return h;
 }
 function padRectDist(p, x, z) {
@@ -6176,16 +6187,41 @@ var _p = new THREE11.Vector3();
 var _s = new THREE11.Vector3();
 var _c = new THREE11.Color();
 var _up2 = new THREE11.Vector3(0, 1, 0);
-function refreshTufts(force, cx, cz) {
+// трава и кочки пересобираются кусками по ~1.5 мс за кадр (генератор), готовый набор копируется в буфер разом:
+// раньше вся пересборка (десятки тысяч травинок) шла в одном кадре и давала рывок каждые несколько метров
+function runGrassJob(T, make, budget) {
+  if (make) T.job = make();
+  if (!T.job) return;
+  const t0 = performance.now();
+  for (;;) {
+    if (T.job.next().done) {
+      T.job = null;
+      return;
+    }
+    if (performance.now() - t0 > budget) return;
+  }
+}
+function commitInstances(im3, M2, C, n2) {
+  if (!im3.instanceColor) im3.setColorAt(0, _c);
+  im3.instanceMatrix.array.set(M2.subarray(0, n2 * 16));
+  im3.instanceColor.array.set(C.subarray(0, n2 * 3));
+  im3.count = n2;
+  im3.instanceMatrix.clearUpdateRanges();
+  im3.instanceMatrix.addUpdateRange(0, Math.max(1, n2) * 16);
+  im3.instanceMatrix.needsUpdate = true;
+  im3.instanceColor.clearUpdateRanges();
+  im3.instanceColor.addUpdateRange(0, Math.max(1, n2) * 3);
+  im3.instanceColor.needsUpdate = true;
+}
+function* tuftJob(cx, cz) {
   const T = TUFTS, im3 = T.im;
-  if (!im3) return;
-  if (!force && T.center.distanceTo(new THREE11.Vector2(cx, cz)) < 1.8) return;
-  T.center.set(cx, cz);
+  const M2 = T.stM ??= new Float32Array(im3.instanceMatrix.array.length), C = T.stC ??= new Float32Array(im3.instanceMatrix.count * 3);
   const max = Math.max(1, Math.round(T.max * GRASS.cap));
   const R2 = T.R, step = Math.sqrt(Math.PI * R2 * R2 / max) * 0.95;
-  let n2 = 0;
+  let n2 = 0, cells = 0;
   const i0 = Math.floor((cx - R2) / step), i1 = Math.floor((cx + R2) / step), j0 = Math.floor((cz - R2) / step), j1 = Math.floor((cz + R2) / step);
   for (let i = i0; i <= i1 && n2 < max; i++) for (let j = j0; j <= j1 && n2 < max; j++) {
+    if ((++cells & 255) === 0) yield;
     const h1 = hash2(i + 501, j - 77), h2 = hash2(j + 913, i + 41), h3 = hash2(i * 5 - 3, j * 3 + 11);
     const x = (i + h1) * step, z = (j + h2) * step, dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
     if (d2 > R2 * R2) continue;
@@ -6198,43 +6234,36 @@ function refreshTufts(force, cx, cz) {
     _p.set(x, hFast(x, z) - 0.02, z);
     _q3.setFromAxisAngle(_up2, h1 * TAU);
     _s.set(sc, sc * lerp(0.75, 1.25, h2), sc);
-    im3.setMatrixAt(n2, _m2.compose(_p, _q3, _s));
+    _m2.compose(_p, _q3, _s).toArray(M2, n2 * 16);
     const dry = Math.max(tall > 1.4 ? 0.5 : (1 - forestFast(x, z)) * 0.25, dryPatch(x, z)), v = lerp(0.85, 1.12, h3);
-    _c.setRGB(v * lerp(0.93, 1.32, dry), v * lerp(0.93, 0.95, dry), v * lerp(0.86, 0.62, dry));
-    im3.setColorAt(n2, _c);
+    C[n2 * 3] = v * lerp(0.93, 1.32, dry);
+    C[n2 * 3 + 1] = v * lerp(0.93, 0.95, dry);
+    C[n2 * 3 + 2] = v * lerp(0.86, 0.62, dry);
     n2++;
   }
-  im3.count = n2;
+  commitInstances(im3, M2, C, n2);
   T.count = n2;
-  im3.instanceMatrix.needsUpdate = true;
-  if (im3.instanceColor) im3.instanceColor.needsUpdate = true;
 }
-function refreshGrass(force) {
-  const im3 = GRASS.im;
-  if (!im3) return;
-  const cx = camera.position.x, cz = camera.position.z;
-  const agl = camera.position.y - hFast(cx, cz);
-  if (agl > 55) {
-    if (im3.count) {
-      im3.count = 0;
-      TUFTS.im.count = 0;
-    }
-    GRASS.center.set(1e9, 1e9);
-    TUFTS.center.set(1e9, 1e9);
-    return;
-  }
-  if (agl < 25 && Q.tufts !== false) refreshTufts(force, cx, cz);
-  else TUFTS.im.count = 0;
-  const R2 = Q.grassR;
-  if (!force && GRASS.center.distanceTo(new THREE11.Vector2(cx, cz)) < R2 * 0.22) return;
-  GRASS.center.set(cx, cz);
+function refreshTufts(force, cx, cz) {
+  const T = TUFTS;
+  if (!T.im) return;
+  const dx = T.center.x - cx, dz = T.center.y - cz;
+  if (force || !T.job && dx * dx + dz * dz >= 1.8 * 1.8) {
+    T.center.set(cx, cz);
+    runGrassJob(T, () => tuftJob(cx, cz), force || T.im.count === 0 ? Infinity : 1);
+  } else if (T.job) runGrassJob(T, null, 1);
+}
+function* grassJob(cx, cz) {
+  const im3 = GRASS.im, R2 = Q.grassR;
+  const M2 = GRASS.stM ??= new Float32Array(im3.instanceMatrix.array.length), C = GRASS.stC ??= new Float32Array(im3.instanceMatrix.count * 3);
   const maxG = Math.round(Q.grass * GRASS.cap);
   const step = Math.sqrt(Math.PI * R2 * R2 / maxG) * 0.92;
   const RN = TUFTS.R * 0.55;
-  let n2 = 0;
+  let n2 = 0, cells = 0;
   const i0 = Math.floor((cx - R2) / step), i1 = Math.floor((cx + R2) / step);
   const j0 = Math.floor((cz - R2) / step), j1 = Math.floor((cz + R2) / step);
   for (let i = i0; i <= i1 && n2 < maxG; i++) for (let j = j0; j <= j1 && n2 < maxG; j++) {
+    if ((++cells & 511) === 0) yield;
     const h1 = hash2(i, j), h2 = hash2(j + 77, i - 31), h3 = hash2(i * 3 + 5, j * 7 - 2);
     const x = (i + h1) * step, z = (j + h2) * step;
     const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
@@ -6250,18 +6279,44 @@ function refreshGrass(force) {
     _p.set(x, y - 0.03, z);
     _q3.setFromAxisAngle(_up2, h1 * TAU);
     _s.set(sc, sc * lerp(0.7, 1.2, h2), sc);
-    _m2.compose(_p, _q3, _s);
-    im3.setMatrixAt(n2, _m2);
+    _m2.compose(_p, _q3, _s).toArray(M2, n2 * 16);
     const dry = Math.max(tall > 1.5 ? 0.55 : (1 - forestFast(x, z)) * 0.25, dryPatch(x, z));
     const v = lerp(0.8, 1.1, h3);
-    _c.setRGB(v * lerp(0.88, 1.28, dry), v * lerp(0.9, 0.96, dry), v * lerp(0.76, 0.58, dry));
-    im3.setColorAt(n2, _c);
+    C[n2 * 3] = v * lerp(0.88, 1.28, dry);
+    C[n2 * 3 + 1] = v * lerp(0.9, 0.96, dry);
+    C[n2 * 3 + 2] = v * lerp(0.76, 0.58, dry);
     n2++;
   }
-  im3.count = n2;
+  commitInstances(im3, M2, C, n2);
   GRASS.count = n2;
-  im3.instanceMatrix.needsUpdate = true;
-  if (im3.instanceColor) im3.instanceColor.needsUpdate = true;
+}
+function refreshGrass(force) {
+  const im3 = GRASS.im;
+  if (!im3) return;
+  const cx = camera.position.x, cz = camera.position.z;
+  const agl = camera.position.y - hFast(cx, cz);
+  if (agl > 55) {
+    if (im3.count) {
+      im3.count = 0;
+      TUFTS.im.count = 0;
+    }
+    GRASS.job = TUFTS.job = null;
+    GRASS.center.set(1e9, 1e9);
+    TUFTS.center.set(1e9, 1e9);
+    return;
+  }
+  if (agl < 25 && Q.tufts !== false) refreshTufts(force, cx, cz);
+  else if (TUFTS.im.count) {
+    TUFTS.im.count = 0;
+    TUFTS.job = null;
+    TUFTS.center.set(1e9, 1e9);
+  }
+  const R2 = Q.grassR, dx = GRASS.center.x - cx, dz = GRASS.center.y - cz;
+  // с высоты травы нет вовсе — первый набор собираем сразу, иначе вокруг будет «лысое» пятно
+  if (force || !GRASS.job && dx * dx + dz * dz >= (R2 * 0.22) ** 2) {
+    GRASS.center.set(cx, cz);
+    runGrassJob(GRASS, () => grassJob(cx, cz), force || im3.count === 0 ? Infinity : 1.5);
+  } else if (GRASS.job) runGrassJob(GRASS, null, 1.5);
 }
 var TILE = 64;
 var FLORA = { tiles: [], drawn: 0 };
@@ -7613,13 +7668,16 @@ function updateLamps(lampOn) {
   SPOT_C.length = 0;
   PT_C.length = 0;
   for (const L of LAMPS) if (L.rank < 1e12) (L.kind === "post" || L.kind === "flood" ? SPOT_C : PT_C).push(L);
+  slCandidates(SPOT_C, SPOTS.length);
   assignSlots(SPOTS, SPOT_C.sort(byRank), 140, (S, L, k, fresh) => {
+    if (L.sl) return slApply(S, L.sl, k, fresh);
     S.position.copy(L.pos);
     const dir2 = L.dir || DOWN;
     S.target.position.copy(L.pos).addScaledVector(dir2, 5);
     S.target.updateMatrixWorld();
     S.color.copy(L.color);
     S.distance = L.range;
+    S.decay = 1.6;
     S.angle = L.kind === "flood" ? 0.62 : 1.08;
     S.penumbra = L.kind === "flood" ? 0.45 : 0.7;
     const d = Math.sqrt(L.pos.distanceToSquared(cp)) * (L.kind === "flood" ? 1.6 : 1);
@@ -7654,7 +7712,13 @@ function assignSlots(slots, cand, maxD, apply) {
     else want.delete(L);
   }
   for (const L of want) {
-    const S = slots.find((q) => !q.userData.lamp);
+    let S = null;
+    // прожектору нужен слот с тенью (иначе луч светит сквозь стены): при нужде забираем его у фонаря
+    if (L.sl) {
+      S = slots.find((q) => q.castShadow && !q.userData.lamp) || slots.find((q) => q.castShadow && q.userData.lamp && !q.userData.lamp.sl) || null;
+      if (S) S.userData.lamp = null;
+    }
+    S ??= slots.find((q) => !q.userData.lamp);
     if (!S) break;
     S.userData.lamp = L;
     S.userData.k = 0;
@@ -10440,8 +10504,10 @@ function huntingStand(t, R2) {
   addBox(lp.x, y + (PH + 0.9) / 2, lp.z, 0.56, PH + 0.9, 0.08, rot, { walk: false });
   const ex = L(W * 0.4, PH, -W + 0.45);
   addLadder({ x: lp.x, z: lp.z, nx, nz, y0: y, y1: y + PH + 0.04, w: 0.48, exit: [ex.x, y + PH + 0.05, ex.z], metal: false });
-  const sl = L(-W * 0.45, PH + 1.62, W * 0.35);
-  addSearchlight({ x: sl.x, y: sl.y, z: sl.z, rot, panel: top, struct: S, deck: y + PH });
+  // прожектор на тумбе посреди будки, ближе к переднему борту: тумба стоит на настиле, оператор помещается за ней
+  const sl = L(0, PH + 1.3, W * 0.25);
+  addCircle(sl.x, sl.z, 0.09, y + PH, y + PH + 1.05);
+  addSearchlight({ x: sl.x, y: sl.y, z: sl.z, rot, panel: top, struct: S, deck: y + PH, cx: x, cz: z, W });
   endStruct();
 }
 function bridge(b, R2) {
@@ -12074,6 +12140,9 @@ var keys = {};
 var SENS = 21e-4;
 function spawnAt(team, mode = PL.mode) {
   const s = SPAWNS[team];
+  // респаун / R — отпускаем пулемёт и прожектор, иначе игрока вернёт к ним
+  if (typeof MG !== "undefined" && MG.cur) mgDismount();
+  if (typeof SLOP !== "undefined" && SLOP.cur) releaseSearchlight();
   PL.team = team;
   PL.mode = mode;
   PL.vel.set(0, 0, 0);
@@ -12110,8 +12179,10 @@ function setMode(mode) {
 }
 function look(dx, dy) {
   if (PL.cine) return;
-  PL.yaw -= dx * SENS;
-  PL.pitch = clamp(PL.pitch - dy * SENS, -1.54, 1.54);
+  // в прицеле / с приближением мышь медленнее — пропорционально углу обзора
+  const k = MG.cur || SLOP.cur ? Math.min(1, camera.fov / 72) : 1;
+  PL.yaw -= dx * SENS * k;
+  PL.pitch = clamp(PL.pitch - dy * SENS * k, -1.54, 1.54);
 }
 function die(msg, kind, at) {
   if (PL.dead > 0) return;
@@ -12298,6 +12369,13 @@ function updatePlayer(dt) {
     if (PL.mode !== "walk" || MG.cur.dead) mgDismount();
     else {
       updateMounted(dt);
+      return;
+    }
+  }
+  if (SLOP.cur) {
+    if (PL.mode !== "walk" || SLOP.cur.broken || SLOP.cur.panel?.dead) releaseSearchlight();
+    else {
+      updateOperate(dt);
       return;
     }
   }
@@ -13811,7 +13889,7 @@ function updateInteract(dt, pl, keys2, sky2) {
   INTER.hint = "";
   const walk = pl.mode === "walk" && pl.dead <= 0 && !pl.ladder;
   mgInteract();
-  const busy = !!INTER.hint || !!MG.cur;
+  const busy = !!INTER.hint || !!MG.cur || !!SLOP.cur;
   const eye = camera.position;
   camera.getWorldDirection(_w);
   let door = null, dd = 2.1, wire = null, wd = 1.3;
@@ -16162,6 +16240,16 @@ function planMG() {
     keep(x, z, 3.2);
     MG.towers.push({ x, z, sgn });
   }
+  // ещё 6 гнёзд ближе к центру — на насыпных высотах, симметрично для обеих команд; смотрят через озеро друг на друга
+  for (const [tx, tz, hh] of [[-31, 31, 3.4], [-50, 6, 3], [6, 50, 3]]) {
+    const [x, z] = findSpot(tx, tz, 6.5, { sym: true, pathPad: 1, trenchPad: 3 });
+    for (const [mx, mz] of [[x, z], [-x, -z]]) {
+      const base = baseH(mx, mz);
+      MOUNDS.push({ x: mx, z: mz, r: 9.5, top: 2.6, h: hh, base });
+      keep(mx, mz, 7.5);
+      MG.plan.push({ kind: "ground", x: mx, z: mz, face: mgTargetDir(mx, mz, -mx, -mz), name: "высота", hill: true });
+    }
+  }
 }
 function buildMG() {
   MG.protoN = m2Proto(2);
@@ -16256,6 +16344,8 @@ function makeNest(pl, x, z, y, face) {
   // корпус пулемёта ловит пули и мешает пройти сквозь станок
   N.col = addBox(N.gx + fx * 0.3, N.gy + 0.5, N.gz + fz * 0.3, 0.55, 1, 1.5, face, { walk: false });
   N.col.mgGun = N;
+  // дульное пламя создаём заранее: его шейдер компилируется при загрузке, а не на первом выстреле
+  makeFlash(N);
   MG.nests.push(N);
   return N;
 }
@@ -16477,16 +16567,20 @@ function nearNest(pos, r = 1.6) {
   return best;
 }
 function mgMount(N) {
+  if (SLOP.cur) releaseSearchlight();
   MG.cur = N;
   MG.aim = 0;
   MG.fire = false;
   MG.ads = false;
+  Object.assign(MGREC, { p: 0, y: 0, z: 0, vp: 0, vy: 0, vz: 0, buzz: 0 });
   PL.ladder = null;
   PL.vel.set(0, 0, 0);
   PL.pos.set(N.gx - Math.sin(N.yaw) * 0.95, N.gy, N.gz - Math.cos(N.yaw) * 0.95);
   PL.yaw = N.yaw + Math.PI;
   PL.pitch = -0.05;
   MG.fov0 = camera.fov;
+  // за пулемётом маркер не нужен: без прицела ствол сводится в центр кадра, в прицеле — мушка по центру
+  $("#cross").style.visibility = "hidden";
   toast("пулемёт · ЛКМ — огонь · ПКМ — прицел · X — лента · E — оставить");
 }
 function mgDismount() {
@@ -16495,6 +16589,9 @@ function mgDismount() {
   MG.cur = null;
   MG.fire = false;
   MG.ads = false;
+  N.recP = N.recY = N.recZ = 0;
+  poseGun(N);
+  $("#cross").style.visibility = "";
   camera.fov = MG.fov0 || 72;
   camera.updateProjectionMatrix();
   PL.pos.set(N.gx - Math.sin(N.yaw) * 1.05, N.gy + 0.02, N.gz - Math.cos(N.yaw) * 1.05);
@@ -16503,13 +16600,23 @@ function mgDismount() {
 }
 var _cam0 = new THREE40.Vector3();
 var _camA = new THREE40.Vector3();
+var _camP = new THREE40.Vector3();
 var _mz = new THREE40.Vector3();
 var _md = new THREE40.Vector3();
 var _mq = new THREE40.Quaternion();
+var _qTP = new THREE40.Quaternion();
+var _qAD = new THREE40.Quaternion();
+var _eTP = new THREE40.Euler(0, 0, 0, "YXZ");
+var _mLook = new THREE40.Matrix4();
 var _aimT = new THREE40.Vector3();
 var angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
-// за пулемётом: без прицела камера сверху-сзади (ствол виден, огонь «от бедра» туда, куда смотрит камера),
-// на ПКМ камера плавно уходит к прицельной планке и сужается угол обзора
+// отдача: пружины с затуханием — ствол подбрасывает (p), уводит вбок (y), коробка откатывается назад (z); buzz — дрожь станка
+var MGREC = { p: 0, y: 0, z: 0, vp: 0, vy: 0, vz: 0, buzz: 0 };
+// прицельная линия M2 в осях тела пулемёта: глаз за диоптром целика, вершина мушки
+var MG_EYE = new THREE40.Vector3(-0.62, 0.2878, 0);
+var MG_POST = new THREE40.Vector3(0.106, 0.297, 0);
+// за пулемётом: без прицела камера позади на удалении (виден весь пулемёт, ствол сводится в точку в центре кадра),
+// на ПКМ камера уходит к целику и смотрит через диоптр на мушку — вершина мушки ровно в центре кадра
 function updateMounted(dt) {
   const N = MG.cur;
   MG.aim += ((MG.ads ? 1 : 0) - MG.aim) * Math.min(1, dt * 9);
@@ -16517,12 +16624,23 @@ function updateMounted(dt) {
   const rel = clamp(angDiff(hd, N.face), -MG_ARC, MG_ARC);
   PL.yaw = N.face + rel - Math.PI;
   PL.pitch = clamp(PL.pitch, -0.3, 0.55);
-  // ствол ведёт в точку под прицелом камеры (сведение), в режиме прицела — строго по взгляду
-  const fwdV = _md.set(-Math.sin(PL.yaw) * Math.cos(PL.pitch), Math.sin(PL.pitch), -Math.cos(PL.yaw) * Math.cos(PL.pitch));
+  const R = MGREC, sub = Math.min(6, Math.ceil(dt / 0.006)), h = dt / sub;
+  for (let i = 0; i < sub; i++) {
+    R.vp += (-170 * R.p - 17 * R.vp) * h;
+    R.p += R.vp * h;
+    R.vy += (-150 * R.y - 16 * R.vy) * h;
+    R.y += R.vy * h;
+    R.vz += (-320 * R.z - 26 * R.vz) * h;
+    R.z += R.vz * h;
+  }
+  R.buzz = Math.max(0, R.buzz - dt * 5);
+  // без прицела ствол ведёт в точку под центром кадра (сведение), в прицеле — строго по взгляду
+  const cpch = Math.cos(PL.pitch);
+  const fwdV = _md.set(-Math.sin(PL.yaw) * cpch, Math.sin(PL.pitch), -Math.cos(PL.yaw) * cpch);
   let gy = N.face + rel, gp = PL.pitch;
   if (MG.aim < 0.5) {
-    const h = rayCast(camera.position, _aimT.copy(camera.position).addScaledVector(fwdV, 450));
-    const tp = h ? h.point : _aimT;
+    const hh = rayCast(camera.position, _aimT.copy(camera.position).addScaledVector(fwdV, 450));
+    const tp = hh ? hh.point : _aimT;
     N.yawG.getWorldPosition(_v40);
     const dx = tp.x - _v40.x, dy = tp.y - _v40.y - 0.155, dz = tp.z - _v40.z;
     if (dx * dx + dz * dz > 4) {
@@ -16532,25 +16650,44 @@ function updateMounted(dt) {
   }
   N.yaw += angDiff(gy, N.yaw) * Math.min(1, dt * 16);
   N.pitch += (gp - N.pitch) * Math.min(1, dt * 16);
+  N.recP = R.p;
+  N.recY = R.y;
+  N.recZ = R.z;
   poseGun(N);
   // игрок стоит у рукояток
   PL.pos.set(N.gx - Math.sin(N.yaw) * 0.95, N.gy, N.gz - Math.cos(N.yaw) * 0.95);
   N.root.updateMatrixWorld(true);
-  const back = _v41.set(-Math.sin(N.yaw), 0, -Math.cos(N.yaw));
-  N.yawG.getWorldPosition(_cam0);
-  _cam0.addScaledVector(back, 1.25).y += 0.72;
-  // глаз над целиком: прицельная планка и мушка в кадре, коробка не закрывает обзор
-  N.gunG.localToWorld(_camA.set(-0.78, 0.365, 0));
-  camera.position.lerpVectors(_cam0, _camA, MG.aim);
-  let shx = 0, shy = 0;
+  const bz = R.buzz * R.buzz, jx = (Math.random() - 0.5) * bz, jy = (Math.random() - 0.5) * bz;
+  let shx = jx * lerp(0.007, 0.0035, MG.aim), shy = jy * lerp(0.007, 0.0035, MG.aim);
   if (BLAST.shake > 0) {
     const s = BLAST.shake * BLAST.shake;
-    shx = (Math.random() - 0.5) * 0.06 * s;
-    shy = (Math.random() - 0.5) * 0.06 * s;
+    shx += (Math.random() - 0.5) * 0.06 * s;
+    shy += (Math.random() - 0.5) * 0.06 * s;
   }
-  const kick = N.kick * (0.3 + MG.aim * 0.7);
-  if (MG.aim > 0.5) camera.rotation.set(N.pitch + kick + shy, N.yaw + Math.PI + shx, 0);
-  else camera.rotation.set(PL.pitch + kick * 0.5 + shy, PL.yaw + shx, 0);
+  // вид сзади: камера на «штанге» за вертлюгом, вращается вокруг него по взгляду; упирается в препятствия и не уходит в землю
+  N.yawG.getWorldPosition(_camP);
+  _camP.y += 0.62;
+  const arm = 3.1;
+  _cam0.set(_camP.x - fwdV.x * arm, _camP.y - fwdV.y * arm + 0.42, _camP.z - fwdV.z * arm);
+  if (MG.aim < 0.99) {
+    const hh = rayCast(_camP, _cam0);
+    if (hh) _cam0.lerpVectors(_camP, _cam0, Math.max(0.12, (hh.dist - 0.25) / arm));
+    _cam0.y = Math.max(_cam0.y, hFast(_cam0.x, _cam0.z) + 0.35);
+  }
+  _cam0.addScaledVector(fwdV, -R.z * 2.2);
+  _eTP.set(PL.pitch + R.p * 0.5 + shy, PL.yaw + R.y * 0.5 + shx, 0);
+  _qTP.setFromEuler(_eTP);
+  // прицел: глаз на линии целик — мушка, камера жёстко связана с телом пулемёта (отдача видна в прицеле)
+  N.gunG.localToWorld(_camA.copy(MG_EYE));
+  N.gunG.localToWorld(_v41.copy(MG_POST));
+  N.gunG.getWorldQuaternion(_mq);
+  _v42.set(0, 1, 0).applyQuaternion(_mq);
+  _mLook.lookAt(_camA, _v41, _v42);
+  _qAD.setFromRotationMatrix(_mLook);
+  _eTP.set(shy, shx, 0);
+  _qAD.multiply(_mq.setFromEuler(_eTP));
+  camera.position.lerpVectors(_cam0, _camA, MG.aim);
+  camera.quaternion.slerpQuaternions(_qTP, _qAD, smoothstep(0.2, 0.9, MG.aim));
   const fov = lerp(MG.fov0 || 72, 26, MG.aim);
   if (Math.abs(camera.fov - fov) > 0.05) {
     camera.fov = fov;
@@ -16559,9 +16696,9 @@ function updateMounted(dt) {
   camera.updateMatrixWorld();
 }
 function poseGun(N) {
-  N.yawG.rotation.y = N.yaw - N.face;
-  N.gunG.rotation.z = N.pitch + N.kick * 0.6;
-  N.gunG.position.x = -N.kick * 0.25;
+  N.yawG.rotation.y = N.yaw - N.face + (N.recY || 0);
+  N.gunG.rotation.z = N.pitch + N.kick * 0.6 + (N.recP || 0);
+  N.gunG.position.x = -N.kick * 0.25 - (N.recZ || 0);
 }
 var MG_RPM = 520;
 function updateMG(dt) {
@@ -16605,10 +16742,7 @@ function updateMG(dt) {
       M2.smoke -= dt;
       if (Math.random() < dt * 6) FX.alpha.spawn({ x: M2.gx, y: M2.gy + 0.6, z: M2.gz, vx: sr(-0.1, 0.1), vy: sr(0.5, 1), vz: sr(-0.1, 0.1), size: sr(0.3, 0.6), grow: 0.9, life: sr(3, 5), col: [0.1, 0.1, 0.1], a: 0.4 * Math.min(1, M2.smoke / 5), windK: 1.4, drag: 0.4 });
     }
-    if (M2.heat > 0.3 && Math.random() < dt * M2.heat * 8 && d2 < 80 * 80) {
-      M2.gunG.localToWorld(_v40.set(0.9, 0.16, 0));
-      FX.alpha.spawn({ x: _v40.x, y: _v40.y, z: _v40.z, vx: 0, vy: sr(0.2, 0.5), vz: 0, size: 0.08, grow: 0.35, life: 1.6, col: [0.55, 0.55, 0.56], a: 0.18 * M2.heat, windK: 1, drag: 0.6 });
-    }
+    if (!M2.dead) mgAfterSmoke(M2, dt, d2);
   }
   for (let i = FALLING_BAGS.length - 1; i >= 0; i--) {
     const f = FALLING_BAGS[i];
@@ -16627,9 +16761,9 @@ function updateMG(dt) {
       writeBag(b);
     }
   }
+  mgLightTick(dt);
   updateBullets(dt);
   updateCasings(dt);
-  updateSearchlights(dt);
   updateTracers();
 }
 var d2c = (p) => (p.x - camera.position.x) ** 2 + (p.z - camera.position.z) ** 2;
@@ -16665,8 +16799,9 @@ function flashTex() {
   return _flashTex;
 }
 // дульное пламя: звезда поперёк ствола + два продольных лепестка
+var _flashMat = null;
 function makeFlash(N) {
-  const mat = new THREE40.MeshBasicMaterial({ map: flashTex(), color: new THREE40.Color(3, 2.2, 1.4), transparent: true, blending: THREE40.AdditiveBlending, depthWrite: false, side: THREE40.DoubleSide, toneMapped: false });
+  const mat = _flashMat ??= new THREE40.MeshBasicMaterial({ map: flashTex(), color: new THREE40.Color(3, 2.2, 1.4), transparent: true, blending: THREE40.AdditiveBlending, depthWrite: false, side: THREE40.DoubleSide, toneMapped: false });
   const g = new THREE40.Group();
   const cross = new THREE40.Mesh(new THREE40.PlaneGeometry(0.42, 0.42).rotateY(Math.PI / 2), mat);
   g.add(cross);
@@ -16681,15 +16816,45 @@ function makeFlash(N) {
   N.gunG.add(g);
   N.flash = g;
 }
-var mgLight = null;
+// свет дульной вспышки берём у вспышки винтовки (она у камеры): новый источник света пересобрал бы все шейдеры
+var MGFL = { t: 0 };
+function mgLightOn(p) {
+  if (!flash) return;
+  camera.updateMatrixWorld();
+  flash.position.copy(p);
+  camera.worldToLocal(flash.position);
+  flash.color.setHex(16757606);
+  flash.distance = 16;
+  flash.decay = 1.6;
+  flash.intensity = 90;
+  MGFL.t = 0.05;
+}
+function mgLightTick(dt) {
+  if (MGFL.t <= 0) return;
+  MGFL.t -= dt;
+  if (MGFL.t > 0) return;
+  flash.intensity = 0;
+  flash.position.set(0.15, -0.1, -0.6);
+  flash.color.setHex(16761466);
+  flash.distance = 12;
+  flash.decay = 2;
+}
 function mgShot(N) {
   MG.lastShot = FRAME.t;
   N.ammo--;
   N.shots = (N.shots || 0) + 1;
   N.heat = Math.min(1, N.heat + 0.012);
+  N.lastFire = FRAME.t;
   N.root.updateMatrixWorld(true);
   N.gunG.localToWorld(_mz.set(1.3, 0.155, 0));
-  _md.set(1, 0, 0).applyQuaternion(N.gunG.getWorldQuaternion(_mq));
+  if (MG.aim > 0.5 && N === MG.cur) {
+    // пристрелка: пуля идёт в точку на линии прицеливания — куда смотрит вершина мушки, туда и попадёт
+    camera.getWorldDirection(_md);
+    const hh = rayCast(camera.position, _aimT.copy(camera.position).addScaledVector(_md, 600));
+    if (hh && hh.dist > 3) _aimT.copy(hh.point);
+    else _aimT.copy(camera.position).addScaledVector(_md, 300);
+    _md.subVectors(_aimT, _mz).normalize();
+  } else _md.set(1, 0, 0).applyQuaternion(N.gunG.getWorldQuaternion(_mq));
   // разброс: станок держит кучно, с рук — шире; перегретый ствол бьёт хуже
   const spread = (MG.aim > 0.5 ? 1.1e-3 : 2.6e-3) * (1 + N.heat * 1.5);
   _md.x += sgauss() * spread;
@@ -16698,29 +16863,64 @@ function mgShot(N) {
   _md.normalize();
   fireBullet({ pos: _mz, dir: _md, speed: 880, cal: "mg", tracer: N.shots % 4 === 0, nest: N });
   N.kick = Math.min(0.03, N.kick + 0.009);
-  PL.pitch += 1.4e-3 * (1 - MG.aim * 0.5);
-  PL.yaw += sr(-8e-4, 8e-4);
-  if (!N.flash) makeFlash(N);
+  if (N === MG.cur) {
+    // отдача: толчок пружинам (подброс, увод, откат коробки) + дрожь станка + медленный увод прицела вверх
+    const ads = MG.aim > 0.5;
+    MGREC.vp += sr(0.22, 0.32) * (ads ? 0.8 : 1);
+    MGREC.vy += sgauss() * 0.13;
+    MGREC.vz += sr(0.4, 0.55);
+    MGREC.buzz = Math.min(1, MGREC.buzz + 0.4);
+    PL.pitch += 1.8e-3 * (1 - MG.aim * 0.4);
+    PL.yaw += sr(-1.2e-3, 1.2e-3);
+  }
   N.flash.visible = true;
   N.flash.rotation.x = Math.random() * TAU;
   N.flash.scale.setScalar(sr(0.75, 1.25));
   N.flashT = 0.035;
-  if (!mgLight) {
-    mgLight = new THREE40.PointLight(16757606, 0, 16, 1.6);
-    scene.add(mgLight);
-  }
-  mgLight.position.copy(_mz);
-  mgLight.intensity = 90;
-  mgLight.userData.t = 0.05;
-  for (let i = 0; i < 3; i++) FX.alpha.spawn({ x: _mz.x, y: _mz.y, z: _mz.z, vx: _md.x * sr(1.5, 4) + sr(-0.3, 0.3), vy: _md.y * 2 + sr(0.1, 0.5), vz: _md.z * sr(1.5, 4) + sr(-0.3, 0.3), size: sr(0.15, 0.35), grow: 1.1, life: sr(0.8, 1.8), col: [0.62, 0.61, 0.6], a: 0.28, drag: 2.2, windK: 1 });
+  mgLightOn(_mz);
+  mgSmoke(N, _mz, _md);
   // дульная волна поднимает пыль с земли перед стволом
   const gy2 = hFast(_mz.x + _md.x, _mz.z + _md.z);
   if (_mz.y - gy2 < 1.3 && Math.random() < 0.6) for (let i = 0; i < 2; i++) FX.alpha.spawn({ x: _mz.x + _md.x * 1.2, y: gy2 + 0.1, z: _mz.z + _md.z * 1.2, vx: _md.x * 2 + sr(-1, 1), vy: sr(0.2, 0.6), vz: _md.z * 2 + sr(-1, 1), size: sr(0.3, 0.6), grow: 1.2, life: sr(1, 2), col: [0.5, 0.45, 0.37], a: 0.25, drag: 2, windK: 0.8 });
   N.gunG.localToWorld(_v40.set(-0.11, 0.05, 0));
   ejectCase(_v40, N);
+  // из окна выброса гильз тянет дымком
+  FX.alpha.spawn({ x: _v40.x, y: _v40.y + 0.05, z: _v40.z, vx: sr(-0.15, 0.15), vy: sr(0.25, 0.5), vz: sr(-0.15, 0.15), size: 0.05, grow: 0.45, life: sr(0.8, 1.4), col: [0.62, 0.62, 0.62], a: 0.13, drag: 2, windK: 0.8, fadeIn: 0.05 });
   mgSound(camera.position.distanceTo(_mz), N === MG.cur);
-  BLAST.shake = Math.max(BLAST.shake, 0.08 + MG.aim * 0.05);
   scareBirds(_mz.x, _mz.y, _mz.z, 110, 1);
+}
+// дым выстрела: быстрый конус газа вперёд, кольцо поперёк ствола, светящийся газ на кадр,
+// и медленный остаток, который висит перед стволом, поднимается и уходит по ветру
+function mgSmoke(N, p, d) {
+  for (let i = 0; i < 3; i++) {
+    const sp = sr(3, 9);
+    FX.alpha.spawn({ x: p.x, y: p.y, z: p.z, vx: d.x * sp + sr(-0.4, 0.4), vy: d.y * sp + sr(-0.2, 0.4), vz: d.z * sp + sr(-0.4, 0.4), size: sr(0.1, 0.2), grow: sr(1.6, 2.4), life: sr(0.4, 0.9), col: [0.8, 0.77, 0.72], col2: [0.7, 0.7, 0.7], a: 0.3, drag: 5.5, windK: 0.6, fadeIn: 0.03 });
+  }
+  _v41.set(0, 1, 0).cross(d);
+  if (_v41.lengthSq() < 1e-4) _v41.set(1, 0, 0);
+  _v41.normalize();
+  _v42.crossVectors(d, _v41);
+  const a0 = Math.random() * TAU;
+  for (let i = 0; i < 4; i++) {
+    const a = a0 + i / 4 * TAU, c = Math.cos(a), s = Math.sin(a), sp = sr(1.2, 2.4);
+    FX.alpha.spawn({ x: p.x + d.x * 0.06, y: p.y + d.y * 0.06, z: p.z + d.z * 0.06, vx: (_v41.x * c + _v42.x * s) * sp + d.x * 0.8, vy: (_v41.y * c + _v42.y * s) * sp + d.y * 0.8, vz: (_v41.z * c + _v42.z * s) * sp + d.z * 0.8, size: sr(0.07, 0.12), grow: 1.4, life: sr(0.35, 0.7), col: [0.72, 0.7, 0.67], a: 0.2, drag: 6, windK: 0.5, fadeIn: 0.03 });
+  }
+  FX.add.spawn({ x: p.x + d.x * 0.12, y: p.y + d.y * 0.12, z: p.z + d.z * 0.12, vx: d.x * 3, vy: d.y * 3, vz: d.z * 3, size: sr(0.16, 0.26), grow: 1.6, life: 0.07, col: [2.4, 1.4, 0.55], a: 0.8, drag: 4 });
+  const k = sr(0.3, 1.1);
+  FX.alpha.spawn({ x: p.x + d.x * k, y: p.y + d.y * k, z: p.z + d.z * k, vx: d.x * 0.4 + sr(-0.1, 0.1), vy: sr(0.12, 0.35), vz: d.z * 0.4 + sr(-0.1, 0.1), size: sr(0.22, 0.4), grow: 0.9, life: sr(2.2, 4), col: [0.68, 0.67, 0.66], a: 0.15, drag: 1.2, windK: 1.3, fadeIn: 0.15 });
+}
+// горячий ствол после очереди: струйка из дула и дымок вдоль кожуха, пока не остынет
+function mgAfterSmoke(M2, dt, d2) {
+  if (M2.heat < 0.12 || d2 > 80 * 80) return;
+  const idle = FRAME.t - (M2.lastFire ?? -9);
+  if (idle > 0.25 && Math.random() < dt * 10 * Math.min(1, M2.heat * 2)) {
+    M2.gunG.localToWorld(_v40.set(1.32, 0.155, 0));
+    FX.alpha.spawn({ x: _v40.x, y: _v40.y, z: _v40.z, vx: sr(-0.03, 0.03), vy: sr(0.25, 0.5), vz: sr(-0.03, 0.03), size: 0.035, grow: 0.28, life: sr(1.6, 2.6), col: [0.62, 0.62, 0.63], a: 0.22 * Math.min(1, M2.heat * 1.6), windK: 1.1, drag: 0.8, fadeIn: 0.1 });
+  }
+  if (Math.random() < dt * M2.heat * 9) {
+    M2.gunG.localToWorld(_v40.set(sr(0.25, 1.05), 0.17, sr(-0.02, 0.02)));
+    FX.alpha.spawn({ x: _v40.x, y: _v40.y, z: _v40.z, vx: 0, vy: sr(0.2, 0.45), vz: 0, size: 0.06, grow: 0.35, life: 1.6, col: [0.55, 0.55, 0.56], a: 0.16 * M2.heat, windK: 1, drag: 0.6, fadeIn: 0.1 });
+  }
 }
 var sgauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 1.15;
 // ——— баллистика ———
@@ -17128,10 +17328,6 @@ function updateTracers() {
     a.addUpdateRange(0, n2 * a.itemSize);
     a.needsUpdate = true;
   }
-  if (mgLight && mgLight.intensity > 0) {
-    mgLight.userData.t -= FRAME.dt;
-    if (mgLight.userData.t <= 0) mgLight.intensity = 0;
-  }
 }
 // ——— гильзы: летят вбок-вниз из окна выброса, звенят и остаются лежать ———
 var CAS = { im: null, list: [], max: 300, n: 0 };
@@ -17360,62 +17556,194 @@ function caseTink(dist) {
   if (!ready() || !mgSoundInit() || dist > 25) return;
   playBuf(MGSND.imp.tink, dist, clamp(0.25 / (1 + dist / 3), 0.01, 0.2), { rate: sr(0.85, 1.2) });
 }
-// ——— прожекторы на вышках: L рядом — включить/выключить; пока стоишь в будке, прожектор ведёшь взглядом ———
+// ——— прожекторы на вышках ———
+// L в будке — включить и встать за прожектор (повторно — выключить), E — взять/отпустить рукоятки.
+// За прожектором луч идёт в точку под прицелом, ПКМ — приближение (луч при этом фокусируется)
 var SL = [];
-var SL_BEAM_L = 150;
+var SL_BEAM_L = 160;
+var SL_R0 = 0.17;
+var SL_TAN = 0.068;
+var SL_POWER = 2600;
+var SLOP = { cur: null, zoom: 0, zoomHeld: false, fov0: 72 };
 function addSearchlight(o) {
-  SL.push({ ...o, on: false, broken: false, yaw: o.rot, pitch: -0.12, light: null, group: null, beam: null, level: 0 });
-}
-function beamMaterial() {
-  return new THREE40.ShaderMaterial({
-    uniforms: { uI: { value: 0 }, uL: { value: SL_BEAM_L }, uHaze: { value: 1 } },
-    vertexShader: `varying float vY; varying vec3 vN; varying vec3 vW;
-      void main(){ vY = position.z; vN = normalize(mat3(modelMatrix) * normal); vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-    fragmentShader: `uniform float uI, uL, uHaze; varying float vY; varying vec3 vN; varying vec3 vW;
-      void main(){
-        vec3 V = normalize(cameraPosition - vW);
-        // край конуса мягкий, сердцевина плотная: чёткий луч с ореолом
-        float edge = pow(abs(dot(normalize(vN), V)), 1.6);
-        float t = clamp(vY / uL, 0.0, 1.0);
-        float fall = pow(1.0 - t, 1.6) * smoothstep(0.0, 0.015, t);
-        float a = uI * edge * fall * uHaze;
-        gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * a, 1.0);
-      }`,
-    transparent: true, depthWrite: false, blending: THREE40.AdditiveBlending, side: THREE40.DoubleSide, toneMapped: false
+  SL.push({
+    ...o, on: false, broken: false, yaw: o.rot, pitch: -0.12, tyaw: o.rot, tpitch: -0.12, group: null, level: 0, focus: 0,
+    len: SL_BEAM_L, hitD: 1e9, rayT: 0, moving: 0, nearK: 1, head: new THREE40.Vector3(o.x, o.y, o.z), dir: new THREE40.Vector3(0, 0, 1), lensP: new THREE40.Vector3(),
+    cand: null
   });
 }
+// объёмная «пыль» луча: мягкий 3D-шум в текстуре (одна выборка вместо восьми хэшей на шаг)
+var _slNoise = null;
+function slNoiseTex() {
+  if (_slNoise) return _slNoise;
+  const N = 32, R2 = rng(4242), raw = new Float32Array(N * N * N), d = new Uint8Array(N * N * N);
+  for (let i = 0; i < raw.length; i++) raw[i] = R2();
+  const at = (x, y, z) => raw[((z + N) % N * N + (y + N) % N) * N + (x + N) % N];
+  for (let z = 0; z < N; z++) for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    let s = 0;
+    for (let k = -1; k <= 1; k++) for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) s += at(x + i, y + j, z + k);
+    d[(z * N + y) * N + x] = Math.round(clamp((s / 27 - 0.5) * 3.2 + 0.5, 0, 1) * 255);
+  }
+  const t = new THREE40.Data3DTexture(d, N, N, N);
+  t.format = THREE40.RedFormat;
+  t.minFilter = t.magFilter = THREE40.LinearFilter;
+  t.wrapS = t.wrapT = t.wrapR = THREE40.RepeatWrapping;
+  t.unpackAlignment = 1;
+  t.needsUpdate = true;
+  return _slNoise = t;
+}
+// конус строится в вершинном шейдере из вершины, оси и угла: position = (cos, sin)·радиус и доля длины
+function slBeamGeometry() {
+  const S = 28, A = 24, pos = [], idx2 = [];
+  for (let i = 0; i <= S; i++) {
+    const t = Math.pow(i / S, 1.7);
+    for (let j = 0; j < A; j++) {
+      const a = j / A * TAU;
+      pos.push(Math.cos(a), Math.sin(a), t);
+    }
+  }
+  for (let i = 0; i < S; i++) for (let j = 0; j < A; j++) {
+    const a = i * A + j, b = i * A + (j + 1) % A, c = a + A, e = b + A;
+    idx2.push(a, b, c, b, e, c);
+  }
+  // крышки: у стекла и на конце, чтобы изнутри луча каждый пиксель попадал на заднюю грань
+  for (const [t, far] of [[0, false], [1, true]]) {
+    const c0 = pos.length / 3;
+    pos.push(0, 0, t);
+    const r0 = far ? S * A : 0;
+    for (let j = 0; j < A; j++) {
+      const a = r0 + j, b = r0 + (j + 1) % A;
+      far ? idx2.push(c0, a, b) : idx2.push(c0, b, a);
+    }
+  }
+  const g = new THREE40.BufferGeometry();
+  g.setAttribute("position", new THREE40.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx2);
+  return g;
+}
+var SL_BEAM_VS = `uniform vec3 uApex, uAxis; uniform float uTanG, uA0, uLen; varying vec3 vW;
+  void main(){
+    vec3 up = abs(uAxis.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+    vec3 bx = normalize(cross(up, uAxis)), by = cross(uAxis, bx);
+    float a = uA0 + position.z * uLen;
+    vec3 w = uApex + uAxis * a + (bx * position.x + by * position.y) * a * uTanG;
+    vW = w;
+    gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
+  }`;
+// луч как рассеяние в дымке: отрезок взгляда внутри конуса находится аналитически и интегрируется по 10 точкам.
+// Плотность света ~ 1/R(R+1) (яркий у стекла, но видимый и вдали), гауссов профиль по радиусу, рассеяние вперёд (HG),
+// у самой камеры дымка гаснет, итог мягко насыщается — луч не превращается в белую стену
+var SL_BEAM_FS = `precision highp sampler3D;
+  uniform vec3 uApex, uAxis; uniform float uTan, uTanG, uA0, uLen, uI, uT, uInside, uFog; uniform sampler3D tNoise; varying vec3 vW;
+  void main(){
+    if (!gl_FrontFacing && uInside < 0.5) discard;
+    vec3 o = cameraPosition, d = normalize(vW - o), co = o - uApex;
+    float cos2 = 1.0 / (1.0 + uTanG * uTanG);
+    float dv = dot(d, uAxis), cv = dot(co, uAxis);
+    float A = dv * dv - cos2, B = 2.0 * (dv * cv - cos2 * dot(d, co)), C = cv * cv - cos2 * dot(co, co);
+    float disc = B * B - 4.0 * A * C, t0 = 0.0, t1 = 1e5;
+    if (A < 0.0) {
+      if (disc <= 0.0) discard;
+      float s = sqrt(disc), r0 = (-B + s) / (2.0 * A), r1 = (-B - s) / (2.0 * A);
+      t0 = max(t0, min(r0, r1)); t1 = min(t1, max(r0, r1));
+    } else if (disc > 0.0) {
+      float s = sqrt(disc), r0 = (-B - s) / (2.0 * A), r1 = (-B + s) / (2.0 * A);
+      if (dv > 0.0) t0 = max(t0, r1); else t1 = min(t1, r0);
+    }
+    if (abs(dv) > 1e-5) { float ta = (uA0 - cv) / dv, tb = (uA0 + uLen - cv) / dv; t0 = max(t0, min(ta, tb)); t1 = min(t1, max(ta, tb)); }
+    if (t1 <= t0) discard;
+    float dt = (t1 - t0) / 10.0, ext = 0.012 + 0.03 * uFog;
+    float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float acc = 0.0;
+    for (int i = 0; i < 10; i++) {
+      float t = t0 + (float(i) + jit) * dt;
+      vec3 x = o + d * t, v = x - uApex;
+      float a = dot(v, uAxis), R = max(a * uTan, 0.05), r2 = max(dot(v, v) - a * a, 0.0);
+      float s = (a - uA0) / uLen;
+      float dens = exp(-2.3 * r2 / (R * R)) / ((R + 0.3) * (R + 1.0));
+      dens *= smoothstep(0.0, 0.02, s) * (1.0 - smoothstep(0.82, 1.0, s)) * smoothstep(0.25, 2.5, t);
+      float n = texture(tNoise, x * 0.23 + vec3(uT * 0.021, -uT * 0.013, uT * 0.017)).r * 0.65 + texture(tNoise, x * 0.9 - vec3(0.0, uT * 0.05, 0.0)).r * 0.35;
+      acc += dens * (0.45 + 1.1 * n) * exp(-ext * t);
+    }
+    acc *= dt;
+    float cth = dot(uAxis, -d), g = 0.45;
+    float hg = min(4.0, (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cth, 1.5) / 0.61);
+    // взгляд вдоль луча из-за прожектора: длинный путь в дымке сходится в точку — приглушаем, чтобы не слепило
+    hg *= mix(1.0, 0.3, smoothstep(0.8, 0.995, -cth));
+    float I = 1.0 - exp(-acc * uI * hg);
+    gl_FragColor = vec4(vec3(1.0, 0.96, 0.88) * I * 0.85, 1.0);
+  }`;
+// блик стекла: виден, только когда смотришь в прожектор; угловой размер ограничен — экран не заливает
+var SL_GLARE_VS = `uniform vec3 uPos; uniform float uSize; varying vec2 vUv;
+  void main(){ vUv = position.xy; vec4 mv = viewMatrix * vec4(uPos, 1.0); float s = min(uSize, max(-mv.z, 0.0) * 0.18); mv.xy += position.xy * s; gl_Position = projectionMatrix * mv; }`;
+var SL_GLARE_FS = `uniform float uI; varying vec2 vUv;
+  void main(){ float r = length(vUv); float a = exp(-r * r * 22.0) + exp(-r * 4.0) * 0.22 + exp(-abs(vUv.y) * 36.0) * exp(-abs(vUv.x) * 2.6) * 0.45;
+    float e = max(0.0, 1.0 - r * r); a *= uI * e * e; gl_FragColor = vec4(vec3(1.0, 0.95, 0.86) * a, 1.0); }`;
 function buildSearchlights() {
-  const housing = new THREE40.CylinderGeometry(0.2, 0.17, 0.42, 16, 1, true).rotateX(Math.PI / 2);
-  const back = new THREE40.CircleGeometry(0.17, 16).rotateY(Math.PI).translate(0, 0, -0.21);
-  const rim = new THREE40.TorusGeometry(0.2, 0.025, 6, 20).translate(0, 0, 0.21);
-  const hsg = BGU40.mergeGeometries([housing.toNonIndexed(), back.toNonIndexed(), rim.toNonIndexed()].map((g) => {
-    g.deleteAttribute("uv");
-    return g;
-  }), false);
-  const yoke = new THREE40.TorusGeometry(0.27, 0.025, 5, 12, Math.PI).rotateZ(Math.PI);
-  const post = new THREE40.CylinderGeometry(0.03, 0.035, 0.5, 6).translate(0, -0.52, 0);
+  const housing = new THREE40.CylinderGeometry(0.2, 0.17, 0.42, 20, 1, true).rotateX(Math.PI / 2);
+  const back = new THREE40.CircleGeometry(0.17, 20).rotateY(Math.PI).translate(0, 0, -0.21);
+  const rim = new THREE40.TorusGeometry(0.2, 0.025, 6, 24).translate(0, 0, 0.21);
+  const fins = [-0.12, -0.05, 0.02].map((z) => new THREE40.TorusGeometry(0.192 + z * 0.07, 0.012, 4, 20).translate(0, 0, z));
+  // боковые рукоятки оператора и скоба сверху: назад ничего не торчит и не заслоняет взгляд
+  const handles = [-1, 1].map((s) => new THREE40.CylinderGeometry(0.018, 0.018, 0.13, 6).rotateZ(Math.PI / 2).translate(s * 0.26, 0, -0.1));
+  const hbar = new THREE40.CylinderGeometry(0.012, 0.012, 0.06, 6).rotateZ(Math.PI / 2).translate(0, 0.2, -0.04);
+  const topBar = new THREE40.TorusGeometry(0.09, 0.012, 4, 10, Math.PI).translate(0, 0.2, -0.04);
+  const clean = (g) => {
+    const n2 = g.index ? g.toNonIndexed() : g;
+    n2.deleteAttribute("uv");
+    return n2;
+  };
+  const hsg = BGU40.mergeGeometries([housing, back, rim, ...fins, ...handles, hbar, topBar].map(clean), false);
+  const yoke = new THREE40.TorusGeometry(0.27, 0.025, 6, 14, Math.PI).rotateZ(Math.PI);
+  const swivel = new THREE40.CylinderGeometry(0.035, 0.04, 0.2, 8).translate(0, -0.37, 0);
+  const yokeG = BGU40.mergeGeometries([yoke, swivel].map(clean), false);
   const lensG = new THREE40.CircleGeometry(0.185, 20).translate(0, 0, 0.2);
-  const beamCore = new THREE40.CylinderGeometry(0.17, Math.tan(0.045) * SL_BEAM_L + 0.17, SL_BEAM_L, 24, 1, true).translate(0, -SL_BEAM_L / 2, 0).rotateX(-Math.PI / 2);
-  const beamHalo = new THREE40.CylinderGeometry(0.2, Math.tan(0.1) * SL_BEAM_L + 0.2, SL_BEAM_L, 24, 1, true).translate(0, -SL_BEAM_L / 2, 0).rotateX(-Math.PI / 2);
   const metal = new THREE40.MeshStandardMaterial({ color: 3752513, metalness: 0.6, roughness: 0.45, side: THREE40.DoubleSide });
+  const beamGeo = slBeamGeometry(), glareGeo = new THREE40.PlaneGeometry(2, 2), noise = slNoiseTex();
   for (const s of SL) {
     const g = new THREE40.Group();
     g.position.set(s.x, s.y, s.z);
+    // тумба стоит на настиле: труба, фланец с косынками, поворотный стакан — прожектор больше не висит в воздухе
+    const dy0 = s.deck - s.y, top = -0.47, colL = top - dy0;
+    const ped = BGU40.mergeGeometries([
+      new THREE40.CylinderGeometry(0.045, 0.055, colL, 10).translate(0, dy0 + colL / 2, 0),
+      new THREE40.CylinderGeometry(0.075, 0.07, 0.07, 12).translate(0, top - 0.03, 0),
+      new THREE40.CylinderGeometry(0.17, 0.17, 0.025, 14).translate(0, dy0 + 0.012, 0),
+      ...[0, 1, 2].map((k) => {
+        const a = k / 3 * TAU + s.rot;
+        return new THREE40.BoxGeometry(0.012, 0.22, 0.1).translate(0, 0.11, 0.1).rotateY(a).translate(0, dy0 + 0.02, 0);
+      }),
+      ...[0, 1, 2, 3].map((k) => {
+        const a = (k + 0.5) / 4 * TAU;
+        return new THREE40.CylinderGeometry(0.012, 0.012, 0.03, 6).translate(Math.sin(a) * 0.13, dy0 + 0.035, Math.cos(a) * 0.13);
+      })
+    ].map(clean), false);
+    const pm = new THREE40.Mesh(ped, metal);
+    pm.castShadow = pm.receiveShadow = true;
+    g.add(pm);
     const yawG = new THREE40.Group(), pitchG = new THREE40.Group();
     g.add(yawG);
     yawG.add(pitchG);
-    yawG.add(new THREE40.Mesh(yoke, metal), new THREE40.Mesh(post, metal));
+    const ym = new THREE40.Mesh(yokeG, metal);
+    ym.castShadow = true;
+    yawG.add(ym);
     const h = new THREE40.Mesh(hsg, metal);
     h.castShadow = true;
     const lens = new THREE40.MeshStandardMaterial({ color: 3355443, emissive: 16775400, emissiveIntensity: 0, roughness: 0.1, metalness: 0 });
     pitchG.add(h, new THREE40.Mesh(lensG, lens));
-    const core = new THREE40.Mesh(beamCore, beamMaterial()), halo = new THREE40.Mesh(beamHalo, beamMaterial());
-    core.visible = halo.visible = false;
-    core.frustumCulled = halo.frustumCulled = false;
-    core.renderOrder = halo.renderOrder = 8;
-    pitchG.add(core, halo);
     scene.add(g);
-    Object.assign(s, { group: g, yawG, pitchG, lens, core, halo });
+    const beamU = { uApex: { value: new THREE40.Vector3() }, uAxis: { value: new THREE40.Vector3(0, 0, 1) }, uTan: { value: SL_TAN }, uTanG: { value: SL_TAN * 1.35 }, uA0: { value: 2.5 }, uLen: { value: SL_BEAM_L }, uI: { value: 0 }, uT: { value: 0 }, uInside: { value: 0 }, uFog: { value: 0 }, tNoise: { value: noise } };
+    const beam = new THREE40.Mesh(beamGeo, new THREE40.ShaderMaterial({ uniforms: beamU, vertexShader: SL_BEAM_VS, fragmentShader: SL_BEAM_FS, transparent: true, depthWrite: false, blending: THREE40.AdditiveBlending, side: THREE40.DoubleSide, toneMapped: false }));
+    const glare = new THREE40.Mesh(glareGeo, new THREE40.ShaderMaterial({ uniforms: { uPos: { value: new THREE40.Vector3() }, uSize: { value: 0.9 }, uI: { value: 0 } }, vertexShader: SL_GLARE_VS, fragmentShader: SL_GLARE_FS, transparent: true, depthWrite: false, blending: THREE40.AdditiveBlending, toneMapped: false }));
+    for (const m of [beam, glare]) {
+      m.frustumCulled = false;
+      m.visible = false;
+      m.renderOrder = 8;
+      scene.add(m);
+      NO_REFLECT.push(m);
+    }
+    s.cand = { sl: s, pos: s.head, rank: 1e12 };
+    Object.assign(s, { group: g, yawG, pitchG, lens, beam, glare, beamU });
     poseSL(s);
   }
 }
@@ -17440,12 +17768,86 @@ function nearSearchlight(r = 2.6) {
   return best;
 }
 function toggleSearchlight() {
+  if (SLOP.cur) {
+    const s = SLOP.cur;
+    s.on = !s.on;
+    click();
+    toast("прожектор " + (s.on ? "вкл" : "выкл"));
+    return true;
+  }
   const s = nearSearchlight();
   if (!s) return false;
   s.on = !s.on;
   click();
-  toast("прожектор вышки: " + (s.on ? "вкл · смотрите — луч идёт за взглядом" : "выкл"));
+  if (s.on) grabSearchlight(s);
+  else toast("прожектор вышки: выкл");
   return true;
+}
+function grabSearchlight(s) {
+  if (MG.cur || PL.mode !== "walk" || PL.dead > 0 || s.broken) return;
+  SLOP.cur = s;
+  SLOP.zoom = 0;
+  SLOP.zoomHeld = false;
+  SLOP.fov0 = camera.fov;
+  PL.ladder = null;
+  PL.vel.set(0, 0, 0);
+  PL.yaw = s.yaw + Math.PI;
+  PL.pitch = clamp(s.pitch, -0.8, 0.55);
+  toast("прожектор · мышь — навести · ПКМ — приближение · L — вкл/выкл · E — отойти");
+}
+function releaseSearchlight() {
+  if (!SLOP.cur) return;
+  SLOP.cur = null;
+  SLOP.zoomHeld = false;
+  SLOP.zoom = 0;
+  camera.fov = SLOP.fov0 || 72;
+  camera.updateProjectionMatrix();
+  PL.pitch = clamp(PL.pitch, -0.6, 0.6);
+  PL.onGround = true;
+}
+var _slA = new THREE40.Vector3();
+var _slB = new THREE40.Vector3();
+// за прожектором: глаз позади и чуть выше корпуса (в пределах будки), луч наводится в точку под прицелом
+function updateOperate(dt) {
+  const s = SLOP.cur;
+  SLOP.zoom += ((SLOP.zoomHeld ? 1 : 0) - SLOP.zoom) * Math.min(1, dt * 8);
+  PL.pitch = clamp(PL.pitch, -0.85, 0.6);
+  const fx = -Math.sin(PL.yaw), fz = -Math.cos(PL.yaw), c = Math.cos(s.rot), sn = Math.sin(s.rot);
+  // глаз «через плечо»: позади и правее корпуса — линия взгляда проходит мимо прожектора даже при наклоне вниз
+  const rx = Math.cos(PL.yaw), rz = -Math.sin(PL.yaw);
+  const ex = s.x - fx * 0.85 + rx * 0.32 - s.cx, ez = s.z - fz * 0.85 + rz * 0.32 - s.cz, m = s.W - 0.12;
+  const lx = clamp(ex * c - ez * sn, -m, m), lz = clamp(ex * sn + ez * c, -m, m);
+  const px = s.cx + lx * c + lz * sn, pz = s.cz - lx * sn + lz * c;
+  PL.pos.set(px, s.deck + 0.02, pz);
+  PL.vel.set(0, 0, 0);
+  PL.onGround = true;
+  // не выше ската крыши будки
+  camera.position.set(px, Math.min(s.deck + 1.8, s.y + 0.38 + Math.max(0, -PL.pitch) * 0.25), pz);
+  let shx = 0, shy = 0;
+  if (BLAST.shake > 0) {
+    const k = BLAST.shake * BLAST.shake;
+    shx = (Math.random() - 0.5) * 0.06 * k;
+    shy = (Math.random() - 0.5) * 0.06 * k;
+  }
+  camera.rotation.set(PL.pitch + shy, PL.yaw + shx, 0);
+  const fov = lerp(SLOP.fov0 || 72, 17, SLOP.zoom);
+  if (Math.abs(camera.fov - fov) > 0.05) {
+    camera.fov = fov;
+    camera.updateProjectionMatrix();
+  }
+  camera.updateMatrixWorld();
+  const cp = Math.cos(PL.pitch);
+  _slA.set(fx * cp, Math.sin(PL.pitch), fz * cp);
+  const h = rayCast(camera.position, _slB.copy(camera.position).addScaledVector(_slA, 420));
+  const tp = h ? h.point : _slB;
+  const dx = tp.x - s.x, dy = tp.y - s.y, dz = tp.z - s.z;
+  if (dx * dx + dy * dy + dz * dz > 9) {
+    s.tyaw = Math.atan2(dx, dz);
+    s.tpitch = clamp(Math.atan2(dy, Math.hypot(dx, dz)), -0.9, 0.7);
+  } else {
+    s.tyaw = PL.yaw + Math.PI;
+    s.tpitch = clamp(PL.pitch, -0.9, 0.7);
+  }
 }
 function shootSearchlights(o, dir2, maxD) {
   for (const s of SL) {
@@ -17456,6 +17858,7 @@ function shootSearchlights(o, dir2, maxD) {
     if (_v40.addScaledVector(dir2, -t).lengthSq() < 0.24 * 0.24) {
       s.broken = true;
       s.on = false;
+      if (SLOP.cur === s) releaseSearchlight();
       s.lens.emissiveIntensity = 0;
       s.lens.color.setHex(1710618);
       s.pitchG.rotation.x += 0.5;
@@ -17468,68 +17871,112 @@ function shootSearchlights(o, dir2, maxD) {
   }
   return false;
 }
-var SL_LIGHTS = [];
+// вызывается до updateLamps: настоящий свет прожектора берёт слот у общих фонарных SpotLight —
+// число источников в шейдерах не меняется, поэтому включение прожектора не вызывает перекомпиляцию
 function updateSearchlights(dt) {
   if (!SL.length || !SL[0].group) return;
   const cp = camera.position, night = SKY.night ?? 0;
-  const op = PL.mode === "walk" && !MG.cur ? nearSearchlight(2.4) : null;
-  const act = [];
+  const haze = (0.1 + 0.9 * night) * (1 + WEATHER.fogK * 1.2 + WEATHER.rain * 0.8);
   for (const s of SL) {
+    s.cand.rank = 1e12;
     const gone = s.panel?.dead;
     if (gone && s.group.visible) {
       s.group.visible = false;
       s.on = false;
+      s.level = 0;
+      if (SLOP.cur === s) releaseSearchlight();
     }
-    if (gone) continue;
-    if (s === op && s.on) {
-      s.yaw += angDiff(PL.yaw + Math.PI, s.yaw) * Math.min(1, dt * 10);
-      s.pitch += (clamp(PL.pitch, -0.7, 0.5) - s.pitch) * Math.min(1, dt * 10);
-      poseSL(s);
+    if (gone) {
+      s.beam.visible = s.glare.visible = false;
+      continue;
     }
-    s.level += ((s.on ? 1 : 0) - s.level) * Math.min(1, dt * 6);
-    const lv = s.level;
-    s.lens.emissiveIntensity = lv * 30;
-    const vis = lv > 0.01;
-    s.core.visible = s.halo.visible = vis;
-    if (vis) {
-      // днём луч почти не виден, ночью и в тумане/дожде — плотный
-      const haze = (0.12 + 0.88 * night) * (1 + WEATHER.fogK * 1.2 + WEATHER.rain * 0.8);
-      s.core.material.uniforms.uI.value = lv * 0.55;
-      s.halo.material.uniforms.uI.value = lv * 0.12;
-      s.core.material.uniforms.uHaze.value = s.halo.material.uniforms.uHaze.value = haze;
-      act.push(s);
+    if (!s.broken) {
+      const py = s.yaw, pp = s.pitch, k = Math.min(1, dt * 12);
+      s.yaw += angDiff(s.tyaw, s.yaw) * k;
+      s.pitch += (s.tpitch - s.pitch) * k;
+      const mv = Math.abs(angDiff(s.yaw, py)) + Math.abs(s.pitch - pp);
+      if (mv > 1e-5) poseSL(s);
+      s.moving = mv > 2e-4 ? 0.3 : Math.max(0, s.moving - dt);
     }
+    s.level += ((s.on ? 1 : 0) - s.level) * Math.min(1, dt * 7);
+    s.focus += ((SLOP.cur === s ? SLOP.zoom : 0) - s.focus) * Math.min(1, dt * 6);
+    const lv = s.level, vis = lv > 0.01;
+    s.beam.visible = s.glare.visible = vis;
+    if (!vis) {
+      s.lens.emissiveIntensity = 0;
+      continue;
+    }
+    const cph = Math.cos(s.pitch);
+    s.dir.set(Math.sin(s.yaw) * cph, Math.sin(s.pitch), Math.cos(s.yaw) * cph);
+    s.lensP.copy(s.head).addScaledVector(s.dir, 0.22);
+    // длина луча — до первого препятствия (чаще, пока прожектор двигают)
+    s.rayT -= dt;
+    if (s.rayT <= 0) {
+      s.rayT = s.moving > 0 ? 0.05 : 0.6;
+      const h = rayCast(s.lensP, _slB.copy(s.lensP).addScaledVector(s.dir, SL_BEAM_L));
+      s.hitD = h ? h.dist : 1e9;
+    }
+    const want = Math.min(SL_BEAM_L, s.hitD + 0.8);
+    s.len = want < s.len ? want : s.len + (want - s.len) * Math.min(1, dt * 10);
+    // упёрся в борт/стену в метре-двух — свет не выжигает кадр
+    s.nearK = Math.pow(clamp((s.hitD - 0.4) / 6, 0.06, 1), 1.4);
+    const tan = SL_TAN * (1 - 0.35 * s.focus), A0 = SL_R0 / tan, U = s.beamU;
+    U.uApex.value.copy(s.lensP).addScaledVector(s.dir, -A0);
+    U.uAxis.value.copy(s.dir);
+    U.uTan.value = tan;
+    U.uTanG.value = tan * 1.35;
+    U.uA0.value = A0;
+    U.uLen.value = Math.max(0.5, s.len - 0.2);
+    U.uT.value = FRAME.t;
+    U.uFog.value = WEATHER.fogK;
+    U.uI.value = lv * 0.55 * haze * (1 + 0.5 * s.focus) * (0.3 + 0.7 * s.nearK);
+    const v = _slA.subVectors(cp, U.uApex.value), a = v.dot(s.dir);
+    U.uInside.value = a > A0 && a < A0 + s.len && v.lengthSq() - a * a < (a * tan * 1.35) ** 2 ? 1 : 0;
+    // стекло и блик: ярко — только если смотришь прямо в прожектор
+    const tc = _slA.subVectors(cp, s.lensP), dist = tc.length(), face = Math.max(0, tc.dot(s.dir) / Math.max(dist, 1e-3));
+    const f4 = face * face * face * face;
+    s.lens.emissiveIntensity = lv * (1.2 + 16 * f4) * (0.35 + 0.65 * night);
+    s.glare.material.uniforms.uPos.value.copy(s.lensP).addScaledVector(s.dir, 0.04);
+    s.glare.material.uniforms.uI.value = lv * f4 * f4 * (0.2 + 0.8 * night) * smoothstep(1.2, 4, dist) * 1.6;
+    s.glare.visible = f4 > 0.01;
+    // слот света: сначала тот, которым управляют, потом — чей луч ближе к камере
+    const seg = clamp(v.dot(s.dir) - A0, 0, s.len);
+    const d2 = _slB.copy(s.lensP).addScaledVector(s.dir, seg).distanceToSquared(cp);
+    s.cand.rank = (SLOP.cur === s ? 0.01 : 0.5) + d2 * 1e-7;
   }
-  // настоящие прожекторные источники — только у ближайших включённых (тень — у самого ближнего)
-  act.sort((a, b) => (a.x - cp.x) ** 2 + (a.z - cp.z) ** 2 - ((b.x - cp.x) ** 2 + (b.z - cp.z) ** 2));
-  while (SL_LIGHTS.length < Math.min(2, act.length)) {
-    const L = new THREE40.SpotLight(16775400, 0, 260, 0.075, 0.28, 1.1);
-    L.castShadow = SL_LIGHTS.length === 0 && Q.spotShadows > 0;
-    if (L.castShadow) {
-      L.shadow.mapSize.set(1024, 1024);
-      L.shadow.bias = -2e-4;
-      L.shadow.camera.near = 0.5;
-    }
-    scene.add(L, L.target);
-    SL_LIGHTS.push(L);
+}
+// кандидаты для слотов SpotLight (из updateLamps): не больше двух и хотя бы один слот остаётся фонарям
+function slCandidates(out, nSlots) {
+  const lim = Math.min(2, Math.max(1, nSlots - 1));
+  let n2 = 0;
+  const list = SL.filter((s) => s.cand && s.cand.rank < 1e12).sort((a, b) => a.cand.rank - b.cand.rank);
+  for (const s of list) {
+    if (n2++ >= lim) break;
+    out.push(s.cand);
   }
-  SL_LIGHTS.forEach((L, i) => {
-    const s = act[i];
-    if (!s) {
-      L.intensity = 0;
-      L.visible = false;
-      return;
-    }
-    L.visible = true;
-    s.pitchG.updateMatrixWorld(true);
-    s.pitchG.getWorldPosition(L.position);
-    s.pitchG.localToWorld(L.target.position.set(0, 0, 10));
-    L.target.updateMatrixWorld();
-    L.intensity = 2.2e5 * s.level;
-  });
+}
+function slApply(S, s, k, fresh) {
+  S.position.copy(s.lensP);
+  S.target.position.copy(s.lensP).addScaledVector(s.dir, 10);
+  S.target.updateMatrixWorld();
+  S.color.setHex(16775400);
+  S.distance = 230;
+  S.decay = 1.2;
+  S.angle = Math.atan(SL_TAN * (1 - 0.35 * s.focus)) * 1.12;
+  S.penumbra = 0.35;
+  S.intensity = SL_POWER * s.level * s.nearK * (1 + 0.6 * s.focus) * k;
+  if (S.castShadow) {
+    S.shadow.autoUpdate = false;
+    if (fresh || s.moving > 0 || FRAME.n % 30 === S.id % 30 || BLAST.shake > 0.05) S.shadow.needsUpdate = true;
+  }
 }
 // ——— ввод ———
 renderer.domElement.addEventListener("mousedown", (e) => {
+  if (SLOP.cur && locked) {
+    e.stopImmediatePropagation();
+    if (e.button === 2) SLOP.zoomHeld = true;
+    return;
+  }
   if (!MG.cur || !locked) return;
   e.stopImmediatePropagation();
   if (e.button === 0) MG.fire = true;
@@ -17537,10 +17984,16 @@ renderer.domElement.addEventListener("mousedown", (e) => {
 });
 addEventListener("mouseup", (e) => {
   if (e.button === 0) MG.fire = false;
-  if (e.button === 2) MG.ads = false;
+  if (e.button === 2) MG.ads = SLOP.zoomHeld = false;
 });
 addEventListener("keydown", (e) => {
   if (!window.MAP_READY || e.repeat) return;
+  if (SLOP.cur) {
+    if (e.code === "KeyE" || e.code === "KeyG") releaseSearchlight();
+    else if (e.code === "KeyL") toggleSearchlight();
+    if (["KeyE", "KeyG", "KeyL", "KeyF", "KeyR", "KeyP", "KeyX"].includes(e.code)) e.stopImmediatePropagation();
+    return;
+  }
   if (MG.cur) {
     if (e.code === "KeyE" || e.code === "KeyG") {
       mgDismount();
@@ -17560,6 +18013,10 @@ addEventListener("keydown", (e) => {
 }, true);
 // E у пулемёта — встать за него (раньше дверей)
 function mgInteract() {
+  if (SLOP.cur) {
+    INTER.hint = "L — " + (SLOP.cur.on ? "выключить" : "включить") + " · ПКМ — приближение · E — отойти";
+    return;
+  }
   if (MG.cur || PL.mode !== "walk" || PL.dead > 0 || PL.ladder) return;
   const N = nearNest(PL.pos);
   if (N) {
@@ -17571,7 +18028,13 @@ function mgInteract() {
     return;
   }
   const s = nearSearchlight();
-  if (s) INTER.hint = "L — прожектор " + (s.on ? "выкл" : "вкл");
+  if (s) {
+    INTER.hint = "L — прожектор " + (s.on ? "выкл" : "вкл") + " · E — встать за прожектор";
+    if (INTER.press) {
+      INTER.press = false;
+      grabSearchlight(s);
+    }
+  }
 }
 function mgHud() {
   const N = MG.cur;
@@ -17654,6 +18117,10 @@ var STEPS = [
     updateSky(0);
     warmupDestruction();
     renderer.compile(scene, camera);
+    // один настоящий кадр под заставкой: компилируются шейдеры теней и постобработки,
+    // иначе это происходило бы в первые секунды игры (рывки после «Взлететь»)
+    renderer.shadowMap.needsUpdate = true;
+    composer.render();
     endWarmup();
   }]
 ];
@@ -17679,10 +18146,19 @@ function finish() {
   searchlight.target.position.set(0, -0.35, -1);
   camera.add(searchlight, searchlight.target);
   TIME.h = 9;
-  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор, у ящика — пополнить боезапас · X — перезарядка · M — карта · P — облёт · R — на базу\nПулемёт: E у рукояток — встать · ЛКМ — огонь · ПКМ — прицел · X — лента · E — отойти · L в будке вышки — прожектор\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
+  $("#help").textContent = "Мышь — обзор · WASD — полёт/ходьба · Space/E вверх · C/Q вниз · Shift быстрее · колесо — скорость дрона\nЛКМ — сброс гранаты / бросок · G — дрон ⇄ пешком · F — прожектор, у ящика — пополнить боезапас · X — перезарядка · M — карта · P — облёт · R — на базу\nПулемёт: E у рукояток — встать · ЛКМ — огонь · ПКМ — прицел · X — лента · E — отойти\nПрожектор вышки: L — вкл/выкл и встать за него · мышь — навести · ПКМ — приближение · E — отойти\nПешком: E — дверь, держать E у колючки — перекусить, W у лестницы — лезть (Space — спрыгнуть)\nПКМ — выстрел · B — артналёт по точке прицела · K — погода · J — молния\nN — фаза суток · T — пауза · [ ] — скорость времени · 1..4 — утро/день/закат/ночь · U — звук · V — интерфейс";
   BLAST.hooks.push((x, y, z, size) => scareBirds(x, y, z, 70 + 45 * size, 1));
   BLAST.hooks.push(onBlastMG);
   gpuWrapPasses();
+  // сброс видеодрайвера (TDR, нехватка памяти): three.js восстанавливает контекст сам, после — перерисовать все тени
+  renderer.domElement.addEventListener("webglcontextlost", () => toast("видеодрайвер сбросил контекст — восстанавливаю…"));
+  renderer.domElement.addEventListener("webglcontextrestored", () => {
+    renderer.shadowMap.needsUpdate = true;
+    scene.traverse((o) => {
+      if (o.isLight && o.castShadow) o.shadow.needsUpdate = true;
+    });
+    toast("графика восстановлена");
+  });
   WEATHER.onStrike = (x, y, z, dist) => {
     thunder(dist);
     if (dist < 150) lightningHit(x, z);
@@ -17799,6 +18275,10 @@ function finish() {
     bullets: BUL,
     searchlights: SL,
     toggleSearchlight,
+    slop: SLOP,
+    grabSearchlight,
+    releaseSearchlight,
+    mounds: MOUNDS,
     reeds: REED,
     boardAt,
     knockBoard,
@@ -18072,6 +18552,7 @@ function frame2(dt, render = true) {
   updateWind(FRAME.t);
   updateSky(dt);
   updateWeather(dt, { night: SKY.night, fogColor: SKY.fogColor, indoor: indoor() });
+  updateSearchlights(dt);
   updateLamps(SKY.lampOn);
   updateMilitary(SKY);
   updateForestLOD();
